@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import ru.xaoser.raidon.runtime.config.RaidConfigLoader;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 
 public final class RaidonCommand {
@@ -31,18 +32,43 @@ public final class RaidonCommand {
                                                             ResourceLocation id = ResourceLocationArgument.getId(ctx, "id");
                                                             BlockPos pos = new BlockPos(ctx.getArgument("x", Integer.class), ctx.getArgument("y", Integer.class), ctx.getArgument("z", Integer.class));
                                                             return startRaid(ctx.getSource(), id, pos);
-                                                        })))))));
+                                                        }))))))
+                )
+                .then(Commands.literal("reload")
+                        .executes(ctx -> reload(ctx.getSource())));
     }
 
     private static int startRaid(CommandSourceStack source, ResourceLocation id, BlockPos pos) {
         ServerLevel level = source.getLevel();
         BlockPos center = pos != null ? pos : BlockPos.containing(source.getPosition());
-        boolean started = RaidManager.startRaid(id, level, center);
-        if (!started) {
-            source.sendFailure(Component.literal("Не удалось запустить рейд " + id + ". Убедитесь, что он загружен и не запущен уже."));
-            return 0;
+        RaidManager.StartResult result = RaidManager.startRaid(id, level, center);
+        if (result == RaidManager.StartResult.NOT_FOUND) {
+            RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
+            result = RaidManager.startRaid(id, level, center);
         }
-        source.sendSuccess(() -> Component.literal("Рейд " + id + " запущен в " + center), true);
+
+        switch (result) {
+            case STARTED -> {
+                source.sendSuccess(() -> Component.literal("Рейд " + id + " запущен в " + center), true);
+                return 1;
+            }
+            case ALREADY_ACTIVE -> {
+                source.sendFailure(Component.literal("Рейд " + id + " уже активен."));
+                return 0;
+            }
+            case NOT_FOUND -> {
+                source.sendFailure(Component.literal("Рейд " + id + " не найден. Проверьте конфиг в config/raidon/raids/."));
+                return 0;
+            }
+            default -> {
+                return 0;
+            }
+        }
+    }
+
+    private static int reload(CommandSourceStack source) {
+        RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
+        source.sendSuccess(() -> Component.literal("Рейды перезагружены из конфигов."), true);
         return 1;
     }
 }

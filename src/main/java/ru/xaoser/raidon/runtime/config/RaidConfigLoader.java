@@ -10,8 +10,8 @@ import net.minecraft.world.entity.Mob;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
-import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
+import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidSpawnSettings;
 
@@ -19,7 +19,6 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -90,7 +89,7 @@ public final class RaidConfigLoader {
                     for (RaidFile.Mob mob : mobs) {
                         EntityType<? extends Mob> type = resolveEntity(mob.type());
                         if (type != null) {
-                            wb.mob(mob.count(), type);
+                            wb.mob(mob.count(), type, SpawnBehavior.fromString(mob.ai()));
                         }
                     }
                     wb.completeWhenAllDead();
@@ -163,7 +162,11 @@ public final class RaidConfigLoader {
 
         public record Completion(String type) { }
 
-        public record Mob(String type, int count) { }
+        public record Mob(String type, int count, String ai) {
+            public Mob(String type, int count) {
+                this(type, count, null);
+            }
+        }
 
         public record Action(String type, String text, Map<String, Object> extra) { }
     }

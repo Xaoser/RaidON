@@ -29,16 +29,16 @@ RaidON — настройка и запуск рейдов
   "waves": [
     {
       "mobs": [
-        { "type": "raidon:goblin", "count": 6 },
-        { "type": "raidon:goblin_archer", "count": 2 }
+        { "type": "minecraft:cow", "count": 4, "ai": "neutral" },
+        { "type": "minecraft:pig", "count": 4, "ai": "neutral" }
       ],
       "complete": { "type": "all_dead" },
       "on_end": [{ "type": "broadcast", "text": "Волна 1 отбита." }]
     },
     {
       "mobs": [
-        { "type": "raidon:goblin", "count": 10 },
-        { "type": "minecraft:pillager", "count": 1 }
+        { "type": "minecraft:sheep", "count": 6, "ai": "neutral" },
+        { "type": "minecraft:cow", "count": 2, "ai": "hostile" }
       ],
       "complete": { "type": "all_dead" }
     }
@@ -59,6 +59,12 @@ RaidON — настройка и запуск рейдов
   - `<id>` — id рейда из JSON.
   - `[x y z]` — необязательный центр. Без координат рейд стартует в точке запуска команды.
   - Требуемый уровень прав: 2.
+- `/raidon reload` — перечитать все рейды из `config/raidon/raids/` без перезапуска сервера.
+
+AI мобов
+--------
+- У моба можно указать `"ai": "hostile"` (агрессивный) или `"ai": "neutral"` (по умолчанию).
+- Hostile-сущности получают простые цели на игроков поблизости; neutral — пассивны.
 
 Встроенный пример
 -----------------
