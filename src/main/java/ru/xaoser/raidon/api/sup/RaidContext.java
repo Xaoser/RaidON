@@ -1,0 +1,14 @@
+package ru.xaoser.raidon.api.sup;
+
+
+public interface RaidContext {
+    // заполняете тем, что нужно рантайму
+    net.minecraft.server.level.ServerLevel level();
+    net.minecraft.core.BlockPos center();
+    float difficulty(); // уже нормализованная 0..10
+    void broadcast(String msg);
+
+    default void awardVictoryLoot() {
+        // заглушка — вы реализуете
+    }
+}
