@@ -11,6 +11,7 @@ import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidWave;
 import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
+import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
 import java.util.*;
 
@@ -94,6 +95,7 @@ class ActiveRaid implements RaidRuntime {
                     continue;
                 }
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
+                MobAiHelper.applyBehavior(mob, entry.behavior());
                 level.addFreshEntity(mob);
                 spawned.add(mob.getUUID());
             }
@@ -133,4 +135,5 @@ class ActiveRaid implements RaidRuntime {
             player.displayClientMessage(net.minecraft.network.chat.Component.literal(msg), false);
         }
     }
+
 }

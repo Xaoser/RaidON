@@ -46,18 +46,18 @@ public final class RaidManager {
         return Optional.ofNullable(RAIDS.get(id));
     }
 
-    public static boolean startRaid(ResourceLocation id, ServerLevel level, BlockPos center) {
+    public static StartResult startRaid(ResourceLocation id, ServerLevel level, BlockPos center) {
         LoadedRaid loaded = RAIDS.get(id);
         if (loaded == null) {
-            return false;
+            return StartResult.NOT_FOUND;
         }
         if (ACTIVE.containsKey(id)) {
-            return false;
+            return StartResult.ALREADY_ACTIVE;
         }
         ActiveRaid active = new ActiveRaid(loaded.raid(), level, center, loaded.spawnSettings());
         ACTIVE.put(id, active);
         LOGGER.info("Started raid {} at {}", id, center);
-        return true;
+        return StartResult.STARTED;
     }
 
     public static void tickAll() {
@@ -93,4 +93,10 @@ public final class RaidManager {
     }
 
     public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings) { }
+
+    public enum StartResult {
+        STARTED,
+        NOT_FOUND,
+        ALREADY_ACTIVE
+    }
 }

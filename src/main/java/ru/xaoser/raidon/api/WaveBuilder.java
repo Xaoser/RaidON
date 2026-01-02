@@ -26,8 +26,12 @@ public final class WaveBuilder {
     }
 
     public WaveBuilder mob(int count, EntityType<? extends Mob> type) {
+        return mob(count, type, ru.xaoser.raidon.api.sup.SpawnBehavior.NEUTRAL);
+    }
+
+    public WaveBuilder mob(int count, EntityType<? extends Mob> type, ru.xaoser.raidon.api.sup.SpawnBehavior behavior) {
         if (count <= 0) throw new IllegalArgumentException("count must be > 0");
-        mobs.add(new MobEntry(count, Objects.requireNonNull(type, "type")));
+        mobs.add(new MobEntry(count, Objects.requireNonNull(type, "type"), Objects.requireNonNull(behavior, "behavior")));
         return this;
     }
 
