@@ -38,7 +38,7 @@ import ru.xaoser.raidon.runtime.raid.RaidManager;
 public class Raidon {
 
     public static final String MODID = "raidon";
-    private static final Logger LOGGER = LogUtils.getLogger();
+    public static final Logger LOGGER = LogUtils.getLogger();
 
     public Raidon() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
@@ -47,7 +47,6 @@ public class Raidon {
 
         MinecraftForge.EVENT_BUS.register(this);
 
-        RaidManager.init();
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }

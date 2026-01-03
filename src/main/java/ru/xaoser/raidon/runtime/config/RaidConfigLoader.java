@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
@@ -28,37 +29,63 @@ public final class RaidConfigLoader {
     private RaidConfigLoader() {}
 
     public static void load(MinecraftServer server, Logger logger) {
-        Path baseDir = server.getFile("config/raidon/raids").toPath();
+        // Correct Forge config dir in 1.20.1
+        Path baseDir = FMLPaths.CONFIGDIR.get().resolve("raidon").resolve("raids");
+        logger.info("[Raidon] Loading raid configs from {}", baseDir.toAbsolutePath());
+
         try {
             Files.createDirectories(baseDir);
         } catch (IOException e) {
-            logger.error("Failed to create raid config directory {}", baseDir, e);
+            logger.error("[Raidon] Failed to create raid config directory {}", baseDir, e);
             return;
         }
 
+        // IMPORTANT: this clears BOTH definitions and active raids in your current RaidManager implementation.
+        // If you want to keep active raids running on reload, replace this with a "clearDefinitions()" method.
         RaidManager.clear();
 
+        int found = 0;
+        int loaded = 0;
+
         try (var stream = Files.list(baseDir)) {
-            stream.filter(path -> path.getFileName().toString().endsWith(".json")).forEach(path -> loadSingle(path, logger));
+            var files = stream
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .toList();
+
+            found = files.size();
+            logger.info("[Raidon] Found {} raid json file(s)", found);
+
+            for (Path file : files) {
+                if (loadSingle(file, logger)) {
+                    loaded++;
+                }
+            }
         } catch (IOException e) {
-            logger.error("Failed to list raid configs in {}", baseDir, e);
+            logger.error("[Raidon] Failed to list raid configs in {}", baseDir, e);
         }
+
+        logger.info("[Raidon] Raid load done. loaded={}/{}. Registered now: {}",
+                loaded, found, RaidManager.raidsView().size());
     }
 
-    private static void loadSingle(Path file, Logger logger) {
+    /**
+     * @return true if the raid file was successfully loaded and registered.
+     */
+    private static boolean loadSingle(Path file, Logger logger) {
         try (Reader reader = Files.newBufferedReader(file)) {
             RaidFile model = GSON.fromJson(reader, RaidFile.class);
             if (model == null) {
-                logger.warn("Skipping empty raid file {}", file);
-                return;
+                logger.warn("[Raidon] Skipping empty raid file {}", file.getFileName());
+                return false;
             }
 
             ResourceLocation id = ResourceLocation.tryParse(model.id());
             if (id == null) {
-                logger.warn("Invalid raid id in {}: {}", file, model.id());
-                return;
+                logger.warn("[Raidon] Invalid raid id in {}: {}", file.getFileName(), model.id());
+                return false;
             }
 
+            // Spawn settings
             RaidSpawnSettings spawnSettings = model.spawn() == null
                     ? RaidSpawnSettings.defaults()
                     : new RaidSpawnSettings(
@@ -71,29 +98,47 @@ public final class RaidConfigLoader {
 
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
-                logger.warn("Raid {} has no waves, skipping", id);
-                return;
+                logger.warn("[Raidon] Raid {} has no waves, skipping ({})", id, file.getFileName());
+                return false;
             }
 
+            // Build raid
             RaidBuilder builder = new RaidBuilder(id)
                     .difficulty((float) model.difficulty())
                     .endAction(buildActions(model.on_raid_end()));
 
             for (int i = 0; i < waves.size(); i++) {
                 RaidFile.Wave wave = waves.get(i);
+                final int waveIndex = i; // ← ВАЖНО
+
                 builder.addWave(wb -> {
                     if (wave.spawn_radius() > 0) {
                         wb.spawnRadius(wave.spawn_radius());
                     }
+
                     List<RaidFile.Mob> mobs = wave.mobs() == null ? List.of() : wave.mobs();
+                    if (mobs.isEmpty()) {
+                        logger.warn(
+                                "[Raidon] Raid {} wave {} has no mobs (file {})",
+                                id, waveIndex, file.getFileName()
+                        );
+                    }
+
                     for (RaidFile.Mob mob : mobs) {
                         EntityType<? extends Mob> type = resolveEntity(mob.type());
-                        if (type != null) {
-                            wb.mob(mob.count(), type, SpawnBehavior.fromString(mob.ai()));
+                        if (type == null) {
+                            logger.warn(
+                                    "[Raidon] Unknown mob type '{}' in raid {} wave {} (file {})",
+                                    mob.type(), id, waveIndex, file.getFileName()
+                            );
+                            continue;
                         }
+                        wb.mob(Math.max(1, mob.count()), type, SpawnBehavior.fromString(mob.ai()));
                     }
+
                     wb.completeWhenAllDead();
-                    if (wave.on_end() != null) {
+
+                    if (wave.on_end() != null && !wave.on_end().isEmpty()) {
                         wb.onWaveEnd(buildActions(wave.on_end()));
                     }
                 });
@@ -101,9 +146,16 @@ public final class RaidConfigLoader {
 
             Raid raid = builder.build();
             RaidManager.registerRaid(id, raid, spawnSettings);
-            logger.info("Loaded raid {} from {}", id, file.getFileName());
+
+            logger.info("[Raidon] Loaded raid {} from {}", id, file.getFileName());
+            return true;
+
         } catch (IOException | JsonParseException | IllegalArgumentException e) {
-            logger.error("Failed to parse raid file {}", file, e);
+            logger.error("[Raidon] Failed to parse raid file {}", file.getFileName(), e);
+            return false;
+        } catch (Exception e) {
+            logger.error("[Raidon] Unexpected error while loading {}", file.getFileName(), e);
+            return false;
         }
     }
 
@@ -112,26 +164,32 @@ public final class RaidConfigLoader {
             return ctx -> {};
         }
         List<RaidFile.Action> immutable = List.copyOf(actions);
+
         return ctx -> {
             for (RaidFile.Action action : immutable) {
                 if ("broadcast".equalsIgnoreCase(action.type()) && action.text() != null) {
                     ctx.broadcast(action.text());
                 }
+                // You can extend here: give_loot, run_command, particles, etc.
             }
         };
     }
 
     @SuppressWarnings("unchecked")
     private static EntityType<? extends Mob> resolveEntity(String id) {
+        if (id == null || id.isBlank()) return null;
+
         ResourceLocation rl = ResourceLocation.tryParse(id);
-        if (rl == null) {
-            return null;
-        }
+        if (rl == null) return null;
+
+        // byString expects "namespace:id"
         return EntityType.byString(rl.toString())
                 .filter(type -> Mob.class.isAssignableFrom(type.getBaseClass()))
                 .map(type -> (EntityType<? extends Mob>) type)
                 .orElse(null);
     }
+
+    // ===== JSON model =====
 
     public record RaidFile(
             String id,
@@ -148,11 +206,11 @@ public final class RaidConfigLoader {
                 Center center,
                 List<Condition> conditions
         ) {
-            public record Center(String type, String structure, int search_radius, boolean prefer_nearest) { }
-            public record Condition(String type, int min, int max, int value) { }
+            public record Center(String type, String structure, int search_radius, boolean prefer_nearest) {}
+            public record Condition(String type, int min, int max, int value) {}
         }
 
-        public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) { }
+        public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
 
         public record Wave(List<Mob> mobs, Completion complete, List<Action> on_end, int spawn_radius) {
             public Wave(List<Mob> mobs, Completion complete, List<Action> on_end) {
@@ -160,7 +218,7 @@ public final class RaidConfigLoader {
             }
         }
 
-        public record Completion(String type) { }
+        public record Completion(String type) {}
 
         public record Mob(String type, int count, String ai) {
             public Mob(String type, int count) {
@@ -168,6 +226,6 @@ public final class RaidConfigLoader {
             }
         }
 
-        public record Action(String type, String text, Map<String, Object> extra) { }
+        public record Action(String type, String text, Map<String, Object> extra) {}
     }
 }

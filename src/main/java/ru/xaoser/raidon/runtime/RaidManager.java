@@ -124,7 +124,7 @@ public final class RaidManager {
 
     @SubscribeEvent
     public void onLevelUnload(LevelEvent.Unload event) {
-        dropForLevel(event.getLevel());
+        dropForLevel((Level) event.getLevel());
     }
 
     @SubscribeEvent
@@ -252,7 +252,7 @@ public final class RaidManager {
         }
 
         private BlockPos findSpawnPos(int radius) {
-            Random random = level.random;
+            Random random = (Random) level.random;
             int dx = random.nextInt(radius * 2 + 1) - radius;
             int dz = random.nextInt(radius * 2 + 1) - radius;
             BlockPos base = center.offset(dx, 0, dz);

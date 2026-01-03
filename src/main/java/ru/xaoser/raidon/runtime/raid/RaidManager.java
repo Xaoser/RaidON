@@ -24,10 +24,6 @@ public final class RaidManager {
 
     private RaidManager() {}
 
-    public static void init() {
-        MinecraftForge.EVENT_BUS.register(RaidManager.class);
-    }
-
     public static void clear() {
         RAIDS.clear();
         ACTIVE.clear();
@@ -87,9 +83,7 @@ public final class RaidManager {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) {
-            tickAll();
-        }
+        if (event.phase == TickEvent.Phase.END) tickAll();
     }
 
     public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings) { }
@@ -97,6 +91,10 @@ public final class RaidManager {
     public enum StartResult {
         STARTED,
         NOT_FOUND,
-        ALREADY_ACTIVE
+        ALREADY_ACTIVE;
+
+        public boolean isStarted() {
+            return this == STARTED;
+        }
     }
 }

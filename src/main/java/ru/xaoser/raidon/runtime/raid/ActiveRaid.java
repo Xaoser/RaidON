@@ -81,7 +81,7 @@ class ActiveRaid implements RaidRuntime {
 
     private void spawnWaveMobs(RaidWave wave) {
         List<UUID> spawned = new ArrayList<>();
-        Random random = level.getRandom();
+        Random random = (Random) level.getRandom();
 
         for (MobEntry entry : wave.mobs()) {
             EntityType<? extends Mob> type = entry.type();
@@ -116,7 +116,7 @@ class ActiveRaid implements RaidRuntime {
 
             if (spawnSettings.requireGround()) {
                 BlockState stateBelow = level.getBlockState(candidate.below());
-                if (!stateBelow.getMaterial().isSolid()) {
+                if (!stateBelow.isSolidRender(level, candidate.below())) {
                     continue;
                 }
             }
