@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -106,33 +107,46 @@ public final class RaidConfigLoader {
                     .difficulty((float) model.difficulty())
                     .endAction(buildActions(model.on_raid_end()));
 
+            boolean hasValidWave = false;
+
             for (int i = 0; i < waves.size(); i++) {
                 RaidFile.Wave wave = waves.get(i);
                 final int waveIndex = i; // ← ВАЖНО
+
+                List<RaidFile.Mob> mobs = wave.mobs() == null ? List.of() : wave.mobs();
+                if (mobs.isEmpty()) {
+                    logger.warn(
+                            "[Raidon] Raid {} wave {} has no mobs (file {})",
+                            id, waveIndex, file.getFileName()
+                    );
+                }
+
+                List<ParsedMob> parsedMobs = new ArrayList<>();
+                for (RaidFile.Mob mob : mobs) {
+                    EntityType<? extends Mob> type = resolveEntity(mob.type());
+                    if (type == null) {
+                        logger.warn(
+                                "[Raidon] Unknown mob type '{}' in raid {} wave {} (file {})",
+                                mob.type(), id, waveIndex, file.getFileName()
+                        );
+                        continue;
+                    }
+                    parsedMobs.add(new ParsedMob(Math.max(1, mob.count()), type, SpawnBehavior.fromString(mob.ai())));
+                }
+
+                if (parsedMobs.isEmpty()) {
+                    logger.warn("[Raidon] Raid {} wave {} has no valid mobs after parsing; skipping wave (file {})",
+                            id, waveIndex, file.getFileName());
+                    continue;
+                }
 
                 builder.addWave(wb -> {
                     if (wave.spawn_radius() > 0) {
                         wb.spawnRadius(wave.spawn_radius());
                     }
 
-                    List<RaidFile.Mob> mobs = wave.mobs() == null ? List.of() : wave.mobs();
-                    if (mobs.isEmpty()) {
-                        logger.warn(
-                                "[Raidon] Raid {} wave {} has no mobs (file {})",
-                                id, waveIndex, file.getFileName()
-                        );
-                    }
-
-                    for (RaidFile.Mob mob : mobs) {
-                        EntityType<? extends Mob> type = resolveEntity(mob.type());
-                        if (type == null) {
-                            logger.warn(
-                                    "[Raidon] Unknown mob type '{}' in raid {} wave {} (file {})",
-                                    mob.type(), id, waveIndex, file.getFileName()
-                            );
-                            continue;
-                        }
-                        wb.mob(Math.max(1, mob.count()), type, SpawnBehavior.fromString(mob.ai()));
+                    for (ParsedMob mob : parsedMobs) {
+                        wb.mob(mob.count(), mob.type(), mob.behavior());
                     }
 
                     wb.completeWhenAllDead();
@@ -141,6 +155,13 @@ public final class RaidConfigLoader {
                         wb.onWaveEnd(buildActions(wave.on_end()));
                     }
                 });
+
+                hasValidWave = true;
+            }
+
+            if (!hasValidWave) {
+                logger.warn("[Raidon] Raid {} has no valid waves, skipping ({})", id, file.getFileName());
+                return false;
             }
 
             Raid raid = builder.build();
@@ -189,6 +210,7 @@ public final class RaidConfigLoader {
     }
 
     // ===== JSON model =====
+    private record ParsedMob(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {}
 
     public record RaidFile(
             String id,
