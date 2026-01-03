@@ -40,9 +40,7 @@ public final class RaidConfigLoader {
             return;
         }
 
-        // IMPORTANT: this clears BOTH definitions and active raids in your current RaidManager implementation.
-        // If you want to keep active raids running on reload, replace this with a "clearDefinitions()" method.
-        RaidManager.clear();
+        RaidManager.clearDefinitions();
 
         int found = 0;
         int loaded = 0;

@@ -24,6 +24,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -31,7 +32,9 @@ import net.minecraftforge.registries.RegistryObject;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.runtime.command.RaidonCommand;
 import ru.xaoser.raidon.runtime.config.RaidConfigLoader;
+import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
+import ru.xaoser.raidon.runtime.client.RaidHudOverlay;
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod(Raidon.MODID)
@@ -53,6 +56,7 @@ public class Raidon {
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Hello, if you read this, you having a great day! (from RaidON)");
+        event.enqueueWork(RaidNetwork::register);
     }
 
     @SubscribeEvent
@@ -73,6 +77,11 @@ public class Raidon {
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
 
+        }
+
+        @SubscribeEvent
+        public static void registerOverlays(RegisterGuiOverlaysEvent event) {
+            event.registerAboveAll("raidon_progress", RaidHudOverlay.INSTANCE);
         }
     }
 }
