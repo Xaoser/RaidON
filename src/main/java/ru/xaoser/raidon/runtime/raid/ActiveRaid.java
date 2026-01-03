@@ -178,7 +178,6 @@ class ActiveRaid implements RaidRuntime {
                     }
                 }
             }
-            total += entry.count();
         }
 
         waveMobs.put(wave.index(), spawned);
