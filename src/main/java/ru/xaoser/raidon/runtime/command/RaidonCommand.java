@@ -1,8 +1,6 @@
 package ru.xaoser.raidon.runtime.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -44,7 +42,13 @@ public final class RaidonCommand {
                         )
                 )
                 .then(Commands.literal("reload")
-                        .executes(ctx -> reload(ctx.getSource())));
+                        .executes(ctx -> reload(ctx.getSource())))
+                .then(Commands.literal("activeRaids")
+                        .executes(ctx -> showActive(ctx.getSource())))
+                .then(Commands.literal("stopRaid")
+                        .then(Commands.argument("id", ResourceLocationArgument.id())
+                                .suggests(RaidSuggestions.RAID_IDS)
+                                .executes(ctx -> stopRaid(ctx.getSource(), ResourceLocationArgument.getId(ctx, "id")))));
     }
 
     private static int startRaid(CommandSourceStack source, ResourceLocation id, BlockPos pos) {
@@ -79,5 +83,36 @@ public final class RaidonCommand {
         RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
         source.sendSuccess(() -> Component.literal("Рейды перезагружены из конфигов."), true);
         return 1;
+    }
+
+    private static int showActive(CommandSourceStack source) {
+        var active = RaidManager.activeStatuses();
+        if (active.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("Активных рейдов нет."), false);
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal("Активные рейды:"), false);
+        for (RaidManager.ActiveRaidStatus status : active) {
+            int waveDisplay = status.waveIndex() + 1;
+            source.sendSuccess(() -> Component.literal(
+                    "- " + status.id() +
+                            " @ " + status.center() +
+                            " | волна " + waveDisplay + "/" + status.totalWaves() +
+                            " | мобы " + status.aliveInWave() + "/" + status.totalInWave()
+            ), false);
+        }
+        return active.size();
+    }
+
+    private static int stopRaid(CommandSourceStack source, ResourceLocation id) {
+        boolean stopped = RaidManager.stopRaid(id);
+        if (stopped) {
+            source.sendSuccess(() -> Component.literal("Рейд " + id + " остановлен."), true);
+            return 1;
+        } else {
+            source.sendFailure(Component.literal("Рейд " + id + " не найден среди активных."));
+            return 0;
+        }
     }
 }

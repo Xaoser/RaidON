@@ -7,7 +7,7 @@ public enum SpawnBehavior {
     public static SpawnBehavior fromString(String value) {
         if (value == null) return NEUTRAL;
         return switch (value.toLowerCase()) {
-            case "hostile", "aggressive" -> HOSTILE;
+            case "hostile", "aggressive", "aggresive" -> HOSTILE;
             default -> NEUTRAL;
         };
     }

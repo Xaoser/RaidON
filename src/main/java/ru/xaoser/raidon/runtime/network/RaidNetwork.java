@@ -4,6 +4,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.simple.SimpleChannel;
 import ru.xaoser.raidon.Raidon;
+import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 
 /**
  * Central network registration point for raid-related packets.
@@ -34,7 +35,13 @@ public final class RaidNetwork {
     }
 
     private static void registerPackets() {
-        // Raid lifecycle packets (start/stop) and wave updates will be registered here.
+        channel.registerMessage(
+                nextId(),
+                RaidProgressS2CPacket.class,
+                RaidProgressS2CPacket::encode,
+                RaidProgressS2CPacket::decode,
+                RaidProgressS2CPacket::handle
+        );
     }
 
     public static SimpleChannel channel() {
