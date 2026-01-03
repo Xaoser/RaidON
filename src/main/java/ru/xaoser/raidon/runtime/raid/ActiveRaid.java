@@ -27,6 +27,7 @@ import java.util.UUID;
 
 class ActiveRaid implements RaidRuntime {
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int MAX_RESPAWN_ATTEMPTS = 3;
 
     private final Raid raid;
     private final ServerLevel level;
@@ -40,6 +41,8 @@ class ActiveRaid implements RaidRuntime {
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
     private boolean completed = false;
+    private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
+    private SpawnResult lastSpawnResult = SpawnResult.empty();
 
     ActiveRaid(Raid raid, ServerLevel level, BlockPos center, RaidSpawnSettings spawnSettings) {
         this.raid = raid;
@@ -94,12 +97,30 @@ class ActiveRaid implements RaidRuntime {
     private void startWave(int waveIndex) {
         currentWaveIndex = waveIndex;
         RaidWave wave = raid.waves().get(waveIndex);
+        remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
+        LOGGER.info("[Raidon][{}] startWave index={} mobs={} spawnRadius={} minR={} maxR={} attemptsPerMob={} requireGround={} avoidWater={}",
+                raid.id(), waveIndex, wave.mobs().size(), wave.spawnRadius(),
+                spawnSettings.minRadius(), spawnSettings.maxRadius(), spawnSettings.attemptsPerMob(),
+                spawnSettings.requireGround(), spawnSettings.avoidWater());
         wave.onWaveStart().run(context);
-        spawnWaveMobs(wave);
+        trySpawnCurrentWave(wave);
         sendProgressIfNeeded();
     }
 
-    private void spawnWaveMobs(RaidWave wave) {
+    private void trySpawnCurrentWave(RaidWave wave) {
+        lastSpawnResult = spawnWaveMobs(wave);
+
+        if (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts > 0) {
+            remainingRespawnAttempts--;
+            LOGGER.warn("[Raidon][{}] wave {} spawn failed (planned={}, created={}, spawned={}, posNull={}, addFailed={}). Retrying... (left={})",
+                    raid.id(), wave.index(), lastSpawnResult.planned, lastSpawnResult.created, lastSpawnResult.spawned,
+                    lastSpawnResult.posNull, lastSpawnResult.addFailed, remainingRespawnAttempts);
+        } else if (lastSpawnResult.planned == 0) {
+            LOGGER.warn("[Raidon][{}] wave {} has no valid mobs after config parsing; wave will complete immediately", raid.id(), wave.index());
+        }
+    }
+
+    private SpawnResult spawnWaveMobs(RaidWave wave) {
         List<UUID> spawned = new ArrayList<>();
         RandomSource random = level.getRandom();
         int planned = 0;
@@ -165,6 +186,8 @@ class ActiveRaid implements RaidRuntime {
 
         LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={}",
                 raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center);
+
+        return new SpawnResult(planned, created, spawnedCount, posNull, addFailed);
     }
 
     private BlockPos findSpawnPos(RandomSource random, int waveRadius) {
@@ -271,5 +294,11 @@ class ActiveRaid implements RaidRuntime {
             }
         }
         waveMobs.clear();
+    }
+
+    private record SpawnResult(int planned, int created, int spawned, int posNull, int addFailed) {
+        static SpawnResult empty() {
+            return new SpawnResult(0, 0, 0, 0, 0);
+        }
     }
 }
