@@ -1,5 +1,6 @@
 package ru.xaoser.raidon.runtime.raid;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -10,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidWave;
 import ru.xaoser.raidon.api.sup.MobEntry;
@@ -24,6 +26,8 @@ import java.util.Map;
 import java.util.UUID;
 
 class ActiveRaid implements RaidRuntime {
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private final Raid raid;
     private final ServerLevel level;
     private final BlockPos center;
@@ -98,32 +102,69 @@ class ActiveRaid implements RaidRuntime {
     private void spawnWaveMobs(RaidWave wave) {
         List<UUID> spawned = new ArrayList<>();
         RandomSource random = level.getRandom();
-        int total = 0;
+        int planned = 0;
+        int created = 0;
+        int spawnedCount = 0;
+        int posNull = 0;
+        int addFailed = 0;
 
         for (MobEntry entry : wave.mobs()) {
             EntityType<? extends Mob> type = entry.type();
             for (int i = 0; i < entry.count(); i++) {
+                planned++;
                 BlockPos pos = findSpawnPos(random, wave.spawnRadius());
                 if (pos == null) {
+                    posNull++;
                     continue;
                 }
                 Mob mob = type.create(level);
                 if (mob == null) {
+                    addFailed++;
                     continue;
                 }
+                created++;
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 MobAiHelper.applyBehavior(mob, entry.behavior());
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
-                    total++;
+                    spawnedCount++;
+                } else {
+                    addFailed++;
+                }
+            }
+        }
+
+        // If everything failed, try a permissive fallback at the raid center so the wave cannot be skipped.
+        if (spawnedCount == 0 && planned > 0) {
+            BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
+            for (MobEntry entry : wave.mobs()) {
+                for (int i = 0; i < entry.count(); i++) {
+                    Mob mob = entry.type().create(level);
+                    if (mob == null) {
+                        addFailed++;
+                        continue;
+                    }
+                    created++;
+                    mob.moveTo(fallback, random.nextFloat() * 360.0F, 0.0F);
+                    mob.setPersistenceRequired();
+                    MobAiHelper.applyBehavior(mob, entry.behavior());
+                    if (level.addFreshEntity(mob)) {
+                        spawned.add(mob.getUUID());
+                        spawnedCount++;
+                    } else {
+                        addFailed++;
+                    }
                 }
             }
             total += entry.count();
         }
 
         waveMobs.put(wave.index(), spawned);
-        waveTotals.put(wave.index(), total);
+        waveTotals.put(wave.index(), Math.max(planned, spawnedCount));
+
+        LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={}",
+                raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center);
     }
 
     private BlockPos findSpawnPos(RandomSource random, int waveRadius) {
