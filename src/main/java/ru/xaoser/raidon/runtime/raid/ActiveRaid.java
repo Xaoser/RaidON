@@ -41,7 +41,7 @@ class ActiveRaid implements RaidRuntime {
         this.raid = raid;
         this.level = level;
         this.center = center;
-        this.spawnSettings = spawnSettings;
+        this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
         this.context = new BasicRaidContext(level, center, raid.difficulty());
     }
 
@@ -116,6 +116,7 @@ class ActiveRaid implements RaidRuntime {
                 MobAiHelper.applyBehavior(mob, entry.behavior());
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
+                    total++;
                 }
             }
             total += entry.count();
@@ -128,7 +129,8 @@ class ActiveRaid implements RaidRuntime {
     private BlockPos findSpawnPos(RandomSource random, int waveRadius) {
         int minRadius = waveRadius > 0 ? waveRadius : spawnSettings.minRadius();
         int maxRadius = waveRadius > 0 ? waveRadius : spawnSettings.maxRadius();
-        for (int attempt = 0; attempt < spawnSettings.attemptsPerMob(); attempt++) {
+        int attempts = Math.max(1, spawnSettings.attemptsPerMob());
+        for (int attempt = 0; attempt < attempts; attempt++) {
             double angle = random.nextDouble() * Math.PI * 2;
             int radius = minRadius + random.nextInt(Math.max(1, maxRadius - minRadius + 1));
             int dx = (int) Math.round(Math.cos(angle) * radius);
@@ -148,7 +150,8 @@ class ActiveRaid implements RaidRuntime {
 
             return candidate;
         }
-        return null;
+        // fallback to raid center if no suitable position was found
+        return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
     }
 
     void notifyPlayers(String msg) {

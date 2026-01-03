@@ -93,6 +93,7 @@ public final class RaidConfigLoader {
                     model.spawn().require_ground(),
                     model.spawn().avoid_water()
             );
+            spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
 
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
