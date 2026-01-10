@@ -16,6 +16,7 @@ import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidWave;
 import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
+import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
@@ -28,6 +29,7 @@ import java.util.UUID;
 class ActiveRaid implements RaidRuntime {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int MAX_RESPAWN_ATTEMPTS = 3;
+    private static final int MIN_PLAYER_DISTANCE = 12;
 
     private final Raid raid;
     private final ServerLevel level;
@@ -38,6 +40,7 @@ class ActiveRaid implements RaidRuntime {
     private int currentWaveIndex = -1;
     private final Map<Integer, List<UUID>> waveMobs = new HashMap<>();
     private final Map<Integer, Integer> waveTotals = new HashMap<>();
+    private final Map<Integer, List<PendingSpawn>> pendingMobs = new HashMap<>();
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
     private boolean completed = false;
@@ -62,7 +65,16 @@ class ActiveRaid implements RaidRuntime {
         }
 
         RaidWave wave = raid.waves().get(currentWaveIndex);
-        if (wave.completeCondition().isComplete(this, context)) {
+        if (hasPendingMobs(currentWaveIndex)) {
+            trySpawnPending(wave);
+        }
+
+        boolean waveComplete = wave.completeCondition().isComplete(this, context);
+        if (waveComplete && hasPendingMobs(currentWaveIndex)) {
+            waveComplete = false;
+        }
+
+        if (waveComplete) {
             wave.onWaveEnd().run(context);
             int next = currentWaveIndex + 1;
             if (next >= raid.waves().size()) {
@@ -103,6 +115,7 @@ class ActiveRaid implements RaidRuntime {
                 spawnSettings.minRadius(), spawnSettings.maxRadius(), spawnSettings.attemptsPerMob(),
                 spawnSettings.requireGround(), spawnSettings.avoidWater());
         wave.onWaveStart().run(context);
+        preparePendingWave(wave);
         trySpawnCurrentWave(wave);
         sendProgressIfNeeded();
     }
@@ -129,65 +142,21 @@ class ActiveRaid implements RaidRuntime {
     private SpawnResult spawnWaveMobs(RaidWave wave) {
         List<UUID> spawned = new ArrayList<>();
         RandomSource random = level.getRandom();
-        int planned = 0;
+        int planned = pendingCount(wave.index());
         int created = 0;
         int spawnedCount = 0;
         int posNull = 0;
         int addFailed = 0;
 
-        for (MobEntry entry : wave.mobs()) {
-            EntityType<? extends Mob> type = entry.type();
-            for (int i = 0; i < entry.count(); i++) {
-                planned++;
-                BlockPos pos = findSpawnPos(random, wave.spawnRadius());
-                if (pos == null) {
-                    posNull++;
-                    continue;
-                }
-                Mob mob = type.create(level);
-                if (mob == null) {
-                    addFailed++;
-                    continue;
-                }
-                created++;
-                mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
-                mob.setPersistenceRequired();
-                MobAiHelper.applyBehavior(mob, entry.behavior());
-                if (level.addFreshEntity(mob)) {
-                    spawned.add(mob.getUUID());
-                    spawnedCount++;
-                } else {
-                    addFailed++;
-                }
-            }
-        }
-
-        // If everything failed, try a permissive fallback at the raid center so the wave cannot be skipped.
-        if (spawnedCount == 0 && planned > 0) {
-            BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
-            for (MobEntry entry : wave.mobs()) {
-                for (int i = 0; i < entry.count(); i++) {
-                    Mob mob = entry.type().create(level);
-                    if (mob == null) {
-                        addFailed++;
-                        continue;
-                    }
-                    created++;
-                    mob.moveTo(fallback, random.nextFloat() * 360.0F, 0.0F);
-                    mob.setPersistenceRequired();
-                    MobAiHelper.applyBehavior(mob, entry.behavior());
-                    if (level.addFreshEntity(mob)) {
-                        spawned.add(mob.getUUID());
-                        spawnedCount++;
-                    } else {
-                        addFailed++;
-                    }
-                }
-            }
-        }
+        SpawnAttemptResult attempt = spawnPendingMobs(wave, random);
+        spawned.addAll(attempt.spawned());
+        created += attempt.created();
+        spawnedCount += attempt.spawnedCount();
+        posNull += attempt.posNull();
+        addFailed += attempt.addFailed();
 
         waveMobs.put(wave.index(), spawned);
-        waveTotals.put(wave.index(), Math.max(planned, spawnedCount));
+        waveTotals.put(wave.index(), planned);
 
         LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={}",
                 raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center);
@@ -217,10 +186,109 @@ class ActiveRaid implements RaidRuntime {
                 continue;
             }
 
+            if (isTooCloseToPlayer(candidate)) {
+                continue;
+            }
+
             return candidate;
         }
-        // fallback to raid center if no suitable position was found
-        return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
+
+        BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
+        if (!isTooCloseToPlayer(fallback)) {
+            return fallback;
+        }
+
+        return null;
+    }
+
+    private void preparePendingWave(RaidWave wave) {
+        List<PendingSpawn> pending = new ArrayList<>();
+        int total = 0;
+        for (MobEntry entry : wave.mobs()) {
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.count()));
+            total += entry.count();
+        }
+        pendingMobs.put(wave.index(), pending);
+        waveTotals.put(wave.index(), total);
+    }
+
+    private boolean hasPendingMobs(int waveIndex) {
+        return pendingCount(waveIndex) > 0;
+    }
+
+    private int pendingCount(int waveIndex) {
+        List<PendingSpawn> pending = pendingMobs.get(waveIndex);
+        if (pending == null) return 0;
+        int total = 0;
+        for (PendingSpawn entry : pending) {
+            total += entry.remaining();
+        }
+        return total;
+    }
+
+    private void trySpawnPending(RaidWave wave) {
+        SpawnAttemptResult attempt = spawnPendingMobs(wave, level.getRandom());
+        if (attempt.spawnedCount() > 0) {
+            List<UUID> spawned = waveMobs.computeIfAbsent(wave.index(), key -> new ArrayList<>());
+            spawned.addAll(attempt.spawned());
+            LOGGER.info("[Raidon][{}] pending spawn wave={} plannedLeft={} created={} spawned={} posNull={} addFailed={}",
+                    raid.id(), wave.index(), pendingCount(wave.index()), attempt.created(), attempt.spawnedCount(),
+                    attempt.posNull(), attempt.addFailed());
+        }
+    }
+
+    private SpawnAttemptResult spawnPendingMobs(RaidWave wave, RandomSource random) {
+        List<UUID> spawned = new ArrayList<>();
+        int created = 0;
+        int spawnedCount = 0;
+        int posNull = 0;
+        int addFailed = 0;
+
+        List<PendingSpawn> pending = pendingMobs.get(wave.index());
+        if (pending == null || pending.isEmpty()) {
+            return new SpawnAttemptResult(spawned, created, spawnedCount, posNull, addFailed);
+        }
+
+        for (PendingSpawn entry : pending) {
+            int remaining = entry.remaining();
+            for (int i = 0; i < remaining; i++) {
+                BlockPos pos = findSpawnPos(random, wave.spawnRadius());
+                if (pos == null) {
+                    posNull++;
+                    continue;
+                }
+                Mob mob = entry.type().create(level);
+                if (mob == null) {
+                    addFailed++;
+                    continue;
+                }
+                created++;
+                mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
+                mob.setPersistenceRequired();
+                MobAiHelper.applyBehavior(mob, entry.behavior());
+                if (level.addFreshEntity(mob)) {
+                    spawned.add(mob.getUUID());
+                    spawnedCount++;
+                    entry.decrement();
+                } else {
+                    addFailed++;
+                }
+            }
+        }
+
+        pending.removeIf(p -> p.remaining() <= 0);
+
+        return new SpawnAttemptResult(spawned, created, spawnedCount, posNull, addFailed);
+    }
+
+    private boolean isTooCloseToPlayer(BlockPos pos) {
+        double minDistSq = MIN_PLAYER_DISTANCE * MIN_PLAYER_DISTANCE;
+        for (ServerPlayer player : level.players()) {
+            if (player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) < minDistSq) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void notifyPlayers(String msg) {
@@ -299,11 +367,44 @@ class ActiveRaid implements RaidRuntime {
             }
         }
         waveMobs.clear();
+        pendingMobs.clear();
     }
 
     private record SpawnResult(int planned, int created, int spawned, int posNull, int addFailed) {
         static SpawnResult empty() {
             return new SpawnResult(0, 0, 0, 0, 0);
+        }
+    }
+
+    private record SpawnAttemptResult(List<UUID> spawned, int created, int spawnedCount, int posNull, int addFailed) {}
+
+    private static final class PendingSpawn {
+        private final EntityType<? extends Mob> type;
+        private final SpawnBehavior behavior;
+        private int remaining;
+
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, int remaining) {
+            this.type = type;
+            this.behavior = behavior;
+            this.remaining = remaining;
+        }
+
+        private EntityType<? extends Mob> type() {
+            return type;
+        }
+
+        private SpawnBehavior behavior() {
+            return behavior;
+        }
+
+        private int remaining() {
+            return remaining;
+        }
+
+        private void decrement() {
+            if (remaining > 0) {
+                remaining--;
+            }
         }
     }
 }

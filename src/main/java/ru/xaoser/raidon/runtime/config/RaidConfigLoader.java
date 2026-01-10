@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.registries.ForgeRegistries;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
@@ -202,11 +203,14 @@ public final class RaidConfigLoader {
         ResourceLocation rl = ResourceLocation.tryParse(id);
         if (rl == null) return null;
 
-        // byString expects "namespace:id"
-        return EntityType.byString(rl.toString())
-                .filter(type -> Mob.class.isAssignableFrom(type.getBaseClass()))
-                .map(type -> (EntityType<? extends Mob>) type)
-                .orElse(null);
+        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(rl);
+        if (type == null) {
+            return null;
+        }
+        if (!Mob.class.isAssignableFrom(type.getBaseClass())) {
+            return null;
+        }
+        return (EntityType<? extends Mob>) type;
     }
 
     // ===== JSON model =====
