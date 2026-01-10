@@ -110,11 +110,17 @@ class ActiveRaid implements RaidRuntime {
     private void trySpawnCurrentWave(RaidWave wave) {
         lastSpawnResult = spawnWaveMobs(wave);
 
-        if (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts > 0) {
+        while (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts > 0) {
             remainingRespawnAttempts--;
             LOGGER.warn("[Raidon][{}] wave {} spawn failed (planned={}, created={}, spawned={}, posNull={}, addFailed={}). Retrying... (left={})",
                     raid.id(), wave.index(), lastSpawnResult.planned, lastSpawnResult.created, lastSpawnResult.spawned,
                     lastSpawnResult.posNull, lastSpawnResult.addFailed, remainingRespawnAttempts);
+            lastSpawnResult = spawnWaveMobs(wave);
+        }
+
+        if (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts == 0) {
+            LOGGER.error("[Raidon][{}] wave {} could not spawn any mobs after {} attempts; wave will complete immediately",
+                    raid.id(), wave.index(), MAX_RESPAWN_ATTEMPTS + 1);
         } else if (lastSpawnResult.planned == 0) {
             LOGGER.warn("[Raidon][{}] wave {} has no valid mobs after config parsing; wave will complete immediately", raid.id(), wave.index());
         }
