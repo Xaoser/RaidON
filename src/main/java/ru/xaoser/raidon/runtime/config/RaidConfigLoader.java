@@ -9,6 +9,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.core.registries.BuiltInRegistries;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
@@ -204,6 +205,9 @@ public final class RaidConfigLoader {
         if (rl == null) return null;
 
         EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(rl);
+        if (type == null) {
+            type = BuiltInRegistries.ENTITY_TYPE.get(rl);
+        }
         if (type == null) {
             return null;
         }
