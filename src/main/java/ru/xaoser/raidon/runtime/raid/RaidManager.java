@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -125,6 +126,21 @@ public final class RaidManager {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) tickAll();
+    }
+
+    @SubscribeEvent
+    public static void onMobDeath(LivingDeathEvent event) {
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        if (!(event.getEntity() instanceof net.minecraft.world.entity.Mob mob)) {
+            return;
+        }
+        for (ActiveRaid raid : ACTIVE.values()) {
+            if (raid.handleMobDeath(mob)) {
+                break;
+            }
+        }
     }
 
     public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings) { }
