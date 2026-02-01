@@ -1,6 +1,7 @@
 package ru.xaoser.raidon.api;
 
 import net.minecraft.resources.ResourceLocation;
+import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
 
 import java.util.*;
@@ -14,6 +15,7 @@ public final class RaidBuilder {
 
     private float difficulty = 0.0F; // 0..10
     private RaidAction endAction = ctx -> {};
+    private List<DropEntry> globalDrops = List.of();
 
     // индекс “по порядку” для addWave(Consumer)
     private int nextIndex = 0;
@@ -64,6 +66,12 @@ public final class RaidBuilder {
         return this;
     }
 
+    /** Глобальные дропы, выдаваемые при завершении рейда. */
+    public RaidBuilder globalDrops(List<DropEntry> drops) {
+        this.globalDrops = drops == null ? List.of() : List.copyOf(drops);
+        return this;
+    }
+
     public Raid build() {
         if (waves.isEmpty()) {
             throw new IllegalStateException("Raid must contain at least one wave");
@@ -74,7 +82,7 @@ public final class RaidBuilder {
             builtWaves.add(e.getValue().build());
         }
 
-        return new Raid(id, builtWaves, difficulty, endAction);
+        return new Raid(id, builtWaves, difficulty, endAction, globalDrops);
     }
 
     private static float clamp(float v, float min, float max) {

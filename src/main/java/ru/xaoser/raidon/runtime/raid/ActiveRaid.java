@@ -9,11 +9,16 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidWave;
+import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
@@ -41,6 +46,7 @@ class ActiveRaid implements RaidRuntime {
     private final Map<Integer, List<UUID>> waveMobs = new HashMap<>();
     private final Map<Integer, Integer> waveTotals = new HashMap<>();
     private final Map<Integer, List<PendingSpawn>> pendingMobs = new HashMap<>();
+    private final Map<UUID, List<DropEntry>> mobDrops = new HashMap<>();
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
     private boolean completed = false;
@@ -78,8 +84,7 @@ class ActiveRaid implements RaidRuntime {
             wave.onWaveEnd().run(context);
             int next = currentWaveIndex + 1;
             if (next >= raid.waves().size()) {
-                completed = true;
-                raid.endAction().run(context);
+                completeRaid();
                 sendProgressIfNeeded();
             } else {
                 startWave(next);
@@ -205,7 +210,7 @@ class ActiveRaid implements RaidRuntime {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
-            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.count()));
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.count()));
             total += entry.count();
         }
         pendingMobs.put(wave.index(), pending);
@@ -263,6 +268,7 @@ class ActiveRaid implements RaidRuntime {
                     continue;
                 }
                 created++;
+                applyDifficultyScaling(mob, entry);
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 MobAiHelper.applyBehavior(mob, entry.behavior());
@@ -270,6 +276,9 @@ class ActiveRaid implements RaidRuntime {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
                     entry.decrement();
+                    if (!entry.drops().isEmpty()) {
+                        mobDrops.put(mob.getUUID(), entry.drops());
+                    }
                 } else {
                     addFailed++;
                 }
@@ -332,9 +341,8 @@ class ActiveRaid implements RaidRuntime {
 
     void forceComplete() {
         if (completed) return;
-        completed = true;
+        completeRaid();
         despawnTracked();
-        raid.endAction().run(context);
         sendProgressIfNeeded();
     }
 
@@ -368,6 +376,86 @@ class ActiveRaid implements RaidRuntime {
         }
         waveMobs.clear();
         pendingMobs.clear();
+        mobDrops.clear();
+    }
+
+    boolean handleMobDeath(Mob mob) {
+        UUID id = mob.getUUID();
+        boolean tracked = removeTrackedMob(id);
+        List<DropEntry> drops = mobDrops.remove(id);
+        if (drops != null && !drops.isEmpty()) {
+            dropLoot(drops, mob.blockPosition(), level.getRandom());
+        }
+        return tracked;
+    }
+
+    private boolean removeTrackedMob(UUID id) {
+        boolean removed = false;
+        for (List<UUID> ids : waveMobs.values()) {
+            if (ids.remove(id)) {
+                removed = true;
+                break;
+            }
+        }
+        return removed;
+    }
+
+    private void completeRaid() {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        raid.endAction().run(context);
+        if (!raid.globalDrops().isEmpty()) {
+            dropLoot(raid.globalDrops(), center, level.getRandom());
+        }
+    }
+
+    private void dropLoot(List<DropEntry> drops, BlockPos pos, RandomSource random) {
+        for (DropEntry drop : drops) {
+            if (random.nextDouble() > drop.chance()) {
+                continue;
+            }
+            int min = drop.min();
+            int max = drop.max();
+            int count = min == max ? min : min + random.nextInt(max - min + 1);
+            if (count <= 0) {
+                continue;
+            }
+            ItemStack stack = new ItemStack(drop.item(), count);
+            ItemEntity entity = new ItemEntity(
+                    level,
+                    pos.getX() + 0.5D,
+                    pos.getY() + 0.5D,
+                    pos.getZ() + 0.5D,
+                    stack
+            );
+            level.addFreshEntity(entity);
+        }
+    }
+
+    private void applyDifficultyScaling(Mob mob, PendingSpawn entry) {
+        float multiplier = difficultyMultiplier(raid.difficulty());
+        AttributeInstance health = mob.getAttribute(Attributes.MAX_HEALTH);
+        if (health != null) {
+            double baseHealth = health.getBaseValue();
+            double scaledHealth = Math.max(1.0D, baseHealth * multiplier);
+            health.setBaseValue(scaledHealth);
+            mob.setHealth((float) scaledHealth);
+        }
+        AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (damage != null) {
+            double baseDamage = entry.baseDamage() != null ? entry.baseDamage() : damage.getBaseValue();
+            double scaledDamage = Math.max(0.0D, baseDamage * multiplier);
+            damage.setBaseValue(scaledDamage);
+        }
+    }
+
+    private static float difficultyMultiplier(float difficulty) {
+        if (difficulty <= 1.0F) {
+            return 0.5F;
+        }
+        return Math.max(0.5F, difficulty - 1.0F);
     }
 
     private record SpawnResult(int planned, int created, int spawned, int posNull, int addFailed) {
@@ -381,11 +469,15 @@ class ActiveRaid implements RaidRuntime {
     private static final class PendingSpawn {
         private final EntityType<? extends Mob> type;
         private final SpawnBehavior behavior;
+        private final Float baseDamage;
+        private final List<DropEntry> drops;
         private int remaining;
 
-        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, int remaining) {
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, int remaining) {
             this.type = type;
             this.behavior = behavior;
+            this.baseDamage = baseDamage;
+            this.drops = drops == null ? List.of() : List.copyOf(drops);
             this.remaining = remaining;
         }
 
@@ -395,6 +487,14 @@ class ActiveRaid implements RaidRuntime {
 
         private SpawnBehavior behavior() {
             return behavior;
+        }
+
+        private Float baseDamage() {
+            return baseDamage;
+        }
+
+        private List<DropEntry> drops() {
+            return drops;
         }
 
         private int remaining() {

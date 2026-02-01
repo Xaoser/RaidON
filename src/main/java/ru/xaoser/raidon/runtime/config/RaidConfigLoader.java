@@ -3,17 +3,17 @@ package ru.xaoser.raidon.runtime.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraft.core.registries.BuiltInRegistries;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
+import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
@@ -106,10 +106,13 @@ public final class RaidConfigLoader {
                 return false;
             }
 
+            List<DropEntry> globalDrops = parseDrops(model.drops() == null ? null : model.drops().global(), logger, file);
+
             // Build raid
             RaidBuilder builder = new RaidBuilder(id)
                     .difficulty((float) model.difficulty())
-                    .endAction(buildActions(model.on_raid_end()));
+                    .endAction(buildActions(model.on_raid_end()))
+                    .globalDrops(globalDrops);
 
             boolean hasValidWave = false;
 
@@ -135,7 +138,15 @@ public final class RaidConfigLoader {
                         );
                         continue;
                     }
-                    parsedMobs.add(new ParsedMob(Math.max(1, mob.count()), type, SpawnBehavior.fromString(mob.ai())));
+                    List<DropEntry> mobDrops = parseDrops(mob.drops(), logger, file);
+                    Float baseDamage = mob.damage() == null ? null : mob.damage().floatValue();
+                    parsedMobs.add(new ParsedMob(
+                            Math.max(1, mob.count()),
+                            type,
+                            SpawnBehavior.fromString(mob.ai()),
+                            baseDamage,
+                            mobDrops
+                    ));
                 }
 
                 if (parsedMobs.isEmpty()) {
@@ -150,7 +161,7 @@ public final class RaidConfigLoader {
                     }
 
                     for (ParsedMob mob : parsedMobs) {
-                        wb.mob(mob.count(), mob.type(), mob.behavior());
+                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops());
                     }
 
                     wb.completeWhenAllDead();
@@ -194,7 +205,6 @@ public final class RaidConfigLoader {
                 if ("broadcast".equalsIgnoreCase(action.type()) && action.text() != null) {
                     ctx.broadcast(action.text());
                 }
-                // You can extend here: give_loot, run_command, particles, etc.
             }
         };
     }
@@ -226,12 +236,19 @@ public final class RaidConfigLoader {
 
 
     // ===== JSON model =====
-    private record ParsedMob(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {}
+    private record ParsedMob(
+            int count,
+            EntityType<? extends Mob> type,
+            SpawnBehavior behavior,
+            Float baseDamage,
+            List<DropEntry> drops
+    ) {}
 
     public record RaidFile(
             String id,
             double difficulty,
             Start start,
+            Drops drops,
             Spawn spawn,
             List<Wave> waves,
             List<Action> on_raid_end
@@ -257,12 +274,41 @@ public final class RaidConfigLoader {
 
         public record Completion(String type) {}
 
-        public record Mob(String type, int count, String ai) {
+        public record Mob(String type, int count, String ai, Double damage, List<Drop> drops) {
             public Mob(String type, int count) {
-                this(type, count, null);
+                this(type, count, null, null, null);
             }
         }
 
         public record Action(String type, String text, Map<String, Object> extra) {}
+
+        public record Drops(List<Drop> global) {}
+
+        public record Drop(String item, int min, int max, double chance) {}
+    }
+
+    private static List<DropEntry> parseDrops(List<RaidFile.Drop> drops, Logger logger, Path file) {
+        if (drops == null || drops.isEmpty()) {
+            return List.of();
+        }
+        List<DropEntry> parsed = new ArrayList<>();
+        for (RaidFile.Drop drop : drops) {
+            if (drop == null || drop.item() == null) {
+                continue;
+            }
+            ResourceLocation id = ResourceLocation.tryParse(drop.item());
+            if (id == null || !BuiltInRegistries.ITEM.containsKey(id)) {
+                logger.warn("[Raidon] Unknown item '{}' in drops list (file {})", drop.item(), file.getFileName());
+                continue;
+            }
+            int min = Math.max(0, drop.min());
+            int max = Math.max(min, drop.max());
+            double chance = Math.max(0.0, Math.min(1.0, drop.chance()));
+            if (max == 0 || chance <= 0.0) {
+                continue;
+            }
+            parsed.add(new DropEntry(BuiltInRegistries.ITEM.get(id), min, max, chance));
+        }
+        return parsed;
     }
 }

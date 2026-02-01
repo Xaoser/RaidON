@@ -3,4 +3,27 @@ package ru.xaoser.raidon.api.sup;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 
-public record MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) { }
+import java.util.List;
+import java.util.Objects;
+
+public record MobEntry(
+        int count,
+        EntityType<? extends Mob> type,
+        SpawnBehavior behavior,
+        Float baseDamage,
+        List<DropEntry> drops
+) {
+    public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {
+        this(count, type, behavior, null, List.of());
+    }
+
+    public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage) {
+        this(count, type, behavior, baseDamage, List.of());
+    }
+
+    public MobEntry {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(behavior, "behavior");
+        drops = drops == null ? List.of() : List.copyOf(drops);
+    }
+}
