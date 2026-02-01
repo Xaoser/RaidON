@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -32,6 +33,7 @@ public final class RaidConfigLoader {
     private RaidConfigLoader() {}
 
     public static void load(MinecraftServer server, Logger logger) {
+
         // Correct Forge config dir in 1.20.1
         Path baseDir = FMLPaths.CONFIGDIR.get().resolve("raidon").resolve("raids");
         logger.info("[Raidon] Loading raid configs from {}", baseDir.toAbsolutePath());
@@ -57,7 +59,7 @@ public final class RaidConfigLoader {
             logger.info("[Raidon] Found {} raid json file(s)", found);
 
             for (Path file : files) {
-                if (loadSingle(file, logger)) {
+                if (loadSingle(server, file, logger)) {
                     loaded++;
                 }
             }
@@ -72,7 +74,7 @@ public final class RaidConfigLoader {
     /**
      * @return true if the raid file was successfully loaded and registered.
      */
-    private static boolean loadSingle(Path file, Logger logger) {
+    private static boolean loadSingle(MinecraftServer server, Path file, Logger logger) {
         try (Reader reader = Files.newBufferedReader(file)) {
             RaidFile model = GSON.fromJson(reader, RaidFile.class);
             if (model == null) {
@@ -125,7 +127,7 @@ public final class RaidConfigLoader {
 
                 List<ParsedMob> parsedMobs = new ArrayList<>();
                 for (RaidFile.Mob mob : mobs) {
-                    EntityType<? extends Mob> type = resolveEntity(mob.type());
+                    EntityType<? extends Mob> type = resolveEntity(server, mob.type());
                     if (type == null) {
                         logger.warn(
                                 "[Raidon] Unknown mob type '{}' in raid {} wave {} (file {})",
@@ -198,24 +200,30 @@ public final class RaidConfigLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static EntityType<? extends Mob> resolveEntity(String id) {
-        if (id == null || id.isBlank()) return null;
+    private static EntityType<? extends Mob> resolveEntity(MinecraftServer server, String id) {
+        if (id == null) return null;
 
-        ResourceLocation rl = ResourceLocation.tryParse(id);
-        if (rl == null) return null;
-
-        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(rl);
-        if (type == null) {
-            type = BuiltInRegistries.ENTITY_TYPE.get(rl);
-        }
-        if (type == null) {
+        final ResourceLocation rl;
+        try {
+            rl = new ResourceLocation(id.trim());
+        } catch (Exception e) {
             return null;
         }
-        if (!Mob.class.isAssignableFrom(type.getBaseClass())) {
-            return null;
-        }
+
+        var reg = server.registryAccess()
+                .registryOrThrow(net.minecraft.core.registries.Registries.ENTITY_TYPE);
+
+        EntityType<?> type = reg.get(rl);
+        if (type == null) return null;
+
+        Entity test = type.create(server.overworld());
+        if (!(test instanceof Mob)) return null;
+
         return (EntityType<? extends Mob>) type;
     }
+
+
+
 
     // ===== JSON model =====
     private record ParsedMob(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {}

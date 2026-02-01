@@ -44,8 +44,8 @@ public enum RaidHudOverlay implements IGuiOverlay {
         // Mob progress bar on top
         float mobProgress = 1.0F - Math.min(1.0F, alive / (float) total);
         int mobBar = (int) (BAR_WIDTH * mobProgress);
-        guiGraphics.fill(x, y - 6, x + BAR_WIDTH, y - 2, 0xFF444444);
-        guiGraphics.fill(x, y - 6, x + mobBar, y - 2, 0xFFE0A030);
+        guiGraphics.fill(x, y - 6, x + mobBar, y - 2, 0xFF444444);
+        guiGraphics.fill(x, y - 6, x + BAR_WIDTH, y - 2, 0xFFE0A030);
 
         // Text
         Component title = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
