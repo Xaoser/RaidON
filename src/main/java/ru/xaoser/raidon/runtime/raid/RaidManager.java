@@ -41,8 +41,8 @@ public final class RaidManager {
         ACTIVE.clear();
     }
 
-    public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings) {
-        RAIDS.put(id, new LoadedRaid(raid, spawnSettings));
+    public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings) {
+        RAIDS.put(id, new LoadedRaid(raid, spawnSettings, pointSettings));
         LOGGER.info("Registered raid definition {}", id);
     }
 
@@ -62,9 +62,17 @@ public final class RaidManager {
         if (ACTIVE.containsKey(id)) {
             return StartResult.ALREADY_ACTIVE;
         }
-        ActiveRaid active = new ActiveRaid(loaded.raid(), level, center, loaded.spawnSettings());
+        RaidPointSettings.ResolvedPoints points = loaded.pointSettings().resolve(center);
+        ActiveRaid active = new ActiveRaid(
+                loaded.raid(),
+                level,
+                points.mainPoint(),
+                points.spawnPoint(),
+                points.raidTargetPoint(),
+                loaded.spawnSettings()
+        );
         ACTIVE.put(id, active);
-        LOGGER.info("Started raid {} at {}", id, center);
+        LOGGER.info("Started raid {} center={} spawn={} target={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint());
         sendProgress(active, false);
         return StartResult.STARTED;
     }
@@ -143,7 +151,7 @@ public final class RaidManager {
         }
     }
 
-    public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings) { }
+    public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings) { }
 
     public enum StartResult {
         STARTED,

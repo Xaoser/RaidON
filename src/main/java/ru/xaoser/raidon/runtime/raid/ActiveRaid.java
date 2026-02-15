@@ -39,6 +39,8 @@ class ActiveRaid implements RaidRuntime {
     private final Raid raid;
     private final ServerLevel level;
     private final BlockPos center;
+    private final BlockPos spawnPoint;
+    private final BlockPos raidTargetPoint;
     private final RaidSpawnSettings spawnSettings;
     private final BasicRaidContext context;
 
@@ -53,12 +55,14 @@ class ActiveRaid implements RaidRuntime {
     private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
     private SpawnResult lastSpawnResult = SpawnResult.empty();
 
-    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, RaidSpawnSettings spawnSettings) {
+    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, RaidSpawnSettings spawnSettings) {
         this.raid = raid;
         this.level = level;
-        this.center = center;
+        this.center = center.immutable();
+        this.spawnPoint = spawnPoint.immutable();
+        this.raidTargetPoint = raidTargetPoint.immutable();
         this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
-        this.context = new BasicRaidContext(level, center, raid.difficulty());
+        this.context = new BasicRaidContext(level, this.center, raid.difficulty());
     }
 
     void tick() {
@@ -115,10 +119,10 @@ class ActiveRaid implements RaidRuntime {
         currentWaveIndex = waveIndex;
         RaidWave wave = raid.waves().get(waveIndex);
         remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
-        LOGGER.info("[Raidon][{}] startWave index={} mobs={} spawnRadius={} minR={} maxR={} attemptsPerMob={} requireGround={} avoidWater={}",
+        LOGGER.info("[Raidon][{}] startWave index={} mobs={} spawnRadius={} minR={} maxR={} attemptsPerMob={} requireGround={} avoidWater={} spawnPoint={} targetPoint={}",
                 raid.id(), waveIndex, wave.mobs().size(), wave.spawnRadius(),
                 spawnSettings.minRadius(), spawnSettings.maxRadius(), spawnSettings.attemptsPerMob(),
-                spawnSettings.requireGround(), spawnSettings.avoidWater());
+                spawnSettings.requireGround(), spawnSettings.avoidWater(), spawnPoint, raidTargetPoint);
         wave.onWaveStart().run(context);
         preparePendingWave(wave);
         trySpawnCurrentWave(wave);
@@ -163,8 +167,8 @@ class ActiveRaid implements RaidRuntime {
         waveMobs.put(wave.index(), spawned);
         waveTotals.put(wave.index(), planned);
 
-        LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={}",
-                raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center);
+        LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={} spawnPoint={} targetPoint={}",
+                raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center, spawnPoint, raidTargetPoint);
 
         return new SpawnResult(planned, created, spawnedCount, posNull, addFailed);
     }
@@ -178,7 +182,7 @@ class ActiveRaid implements RaidRuntime {
             int radius = minRadius + random.nextInt(Math.max(1, maxRadius - minRadius + 1));
             int dx = (int) Math.round(Math.cos(angle) * radius);
             int dz = (int) Math.round(Math.sin(angle) * radius);
-            BlockPos candidate = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center.offset(dx, 0, dz));
+            BlockPos candidate = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint.offset(dx, 0, dz));
 
             if (spawnSettings.requireGround()) {
                 BlockState stateBelow = level.getBlockState(candidate.below());
@@ -198,7 +202,7 @@ class ActiveRaid implements RaidRuntime {
             return candidate;
         }
 
-        BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center);
+        BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint);
         if (!isTooCloseToPlayer(fallback)) {
             return fallback;
         }
@@ -210,7 +214,7 @@ class ActiveRaid implements RaidRuntime {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
-            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.count()));
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.count()));
             total += entry.count();
         }
         pendingMobs.put(wave.index(), pending);
@@ -271,7 +275,7 @@ class ActiveRaid implements RaidRuntime {
                 applyDifficultyScaling(mob, entry);
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
-                MobAiHelper.applyBehavior(mob, entry.behavior());
+                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint);
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
@@ -471,13 +475,15 @@ class ActiveRaid implements RaidRuntime {
         private final SpawnBehavior behavior;
         private final Float baseDamage;
         private final List<DropEntry> drops;
+        private final ru.xaoser.raidon.api.sup.MobTargeting targeting;
         private int remaining;
 
-        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, int remaining) {
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, ru.xaoser.raidon.api.sup.MobTargeting targeting, int remaining) {
             this.type = type;
             this.behavior = behavior;
             this.baseDamage = baseDamage;
             this.drops = drops == null ? List.of() : List.copyOf(drops);
+            this.targeting = targeting == null ? ru.xaoser.raidon.api.sup.MobTargeting.defaults() : targeting;
             this.remaining = remaining;
         }
 
@@ -495,6 +501,10 @@ class ActiveRaid implements RaidRuntime {
 
         private List<DropEntry> drops() {
             return drops;
+        }
+
+        private ru.xaoser.raidon.api.sup.MobTargeting targeting() {
+            return targeting;
         }
 
         private int remaining() {

@@ -11,19 +11,21 @@ public record MobEntry(
         EntityType<? extends Mob> type,
         SpawnBehavior behavior,
         Float baseDamage,
-        List<DropEntry> drops
+        List<DropEntry> drops,
+        MobTargeting targeting
 ) {
     public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {
-        this(count, type, behavior, null, List.of());
+        this(count, type, behavior, null, List.of(), MobTargeting.defaults());
     }
 
     public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage) {
-        this(count, type, behavior, baseDamage, List.of());
+        this(count, type, behavior, baseDamage, List.of(), MobTargeting.defaults());
     }
 
     public MobEntry {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(behavior, "behavior");
         drops = drops == null ? List.of() : List.copyOf(drops);
+        targeting = targeting == null ? MobTargeting.defaults() : targeting;
     }
 }
