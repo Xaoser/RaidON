@@ -2,6 +2,7 @@ package ru.xaoser.raidon.runtime.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -17,6 +18,7 @@ import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
+import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
 import ru.xaoser.raidon.runtime.raid.RaidSpawnSettings;
 
 import java.io.IOException;
@@ -100,6 +102,8 @@ public final class RaidConfigLoader {
             );
             spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
 
+            RaidPointSettings pointSettings = parsePointSettings(model.points(), logger, file);
+
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
                 logger.warn("[Raidon] Raid {} has no waves, skipping ({})", id, file.getFileName());
@@ -180,7 +184,7 @@ public final class RaidConfigLoader {
             }
 
             Raid raid = builder.build();
-            RaidManager.registerRaid(id, raid, spawnSettings);
+            RaidManager.registerRaid(id, raid, spawnSettings, pointSettings);
 
             logger.info("[Raidon] Loaded raid {} from {}", id, file.getFileName());
             return true;
@@ -248,6 +252,7 @@ public final class RaidConfigLoader {
             String id,
             double difficulty,
             Start start,
+            Points points,
             Drops drops,
             Spawn spawn,
             List<Wave> waves,
@@ -263,6 +268,8 @@ public final class RaidConfigLoader {
             public record Center(String type, String structure, int search_radius, boolean prefer_nearest) {}
             public record Condition(String type, int min, int max, int value) {}
         }
+
+        public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint) {}
 
         public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
 
@@ -287,6 +294,58 @@ public final class RaidConfigLoader {
         public record Drop(String item, int min, int max, double chance) {}
     }
 
+    private static RaidPointSettings parsePointSettings(RaidFile.Points points, Logger logger, Path file) {
+        if (points == null) {
+            return RaidPointSettings.DEFAULT;
+        }
+        return new RaidPointSettings(
+                parsePoint(points.mainpoint(), logger, file, "points.mainpoint"),
+                parsePoint(points.raidspawnpoint(), logger, file, "points.raidspawnpoint"),
+                parsePoint(points.raidpoint(), logger, file, "points.raidpoint")
+        );
+    }
+
+    private static net.minecraft.core.BlockPos parsePoint(JsonElement element, Logger logger, Path file, String key) {
+        if (element == null || element.isJsonNull()) {
+            return null;
+        }
+
+        if (element.isJsonObject()) {
+            var obj = element.getAsJsonObject();
+            if (obj.has("x") && obj.has("y") && obj.has("z")) {
+                try {
+                    return new net.minecraft.core.BlockPos(obj.get("x").getAsInt(), obj.get("y").getAsInt(), obj.get("z").getAsInt());
+                } catch (Exception ignored) {
+                    // handled below
+                }
+            }
+        }
+
+        if (element.isJsonArray() && element.getAsJsonArray().size() == 3) {
+            try {
+                var a = element.getAsJsonArray();
+                return new net.minecraft.core.BlockPos(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt());
+            } catch (Exception ignored) {
+                // handled below
+            }
+        }
+
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+            String raw = element.getAsString().trim();
+            String[] parts = raw.split("[,\\s]+");
+            if (parts.length == 3) {
+                try {
+                    return new net.minecraft.core.BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                } catch (NumberFormatException ignored) {
+                    // handled below
+                }
+            }
+        }
+
+        logger.warn("[Raidon] Invalid {} in {}. Expected object {{x,y,z}}, array [x,y,z], or string 'x y z'", key, file.getFileName());
+        return null;
+    }
+
     private static List<DropEntry> parseDrops(List<RaidFile.Drop> drops, Logger logger, Path file) {
         if (drops == null || drops.isEmpty()) {
             return List.of();
@@ -303,7 +362,8 @@ public final class RaidConfigLoader {
             }
             int min = Math.max(0, drop.min());
             int max = Math.max(min, drop.max());
-            double chance = Math.max(0.0, Math.min(1.0, drop.chance()));
+            double normalizedChance = drop.chance() > 1.0 ? drop.chance() / 100.0 : drop.chance();
+            double chance = Math.max(0.0, Math.min(1.0, normalizedChance));
             if (max == 0 || chance <= 0.0) {
                 continue;
             }
