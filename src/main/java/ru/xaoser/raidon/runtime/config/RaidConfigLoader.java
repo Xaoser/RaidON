@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
 import ru.xaoser.raidon.api.sup.DropEntry;
+import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
@@ -149,7 +150,8 @@ public final class RaidConfigLoader {
                             type,
                             SpawnBehavior.fromString(mob.ai()),
                             baseDamage,
-                            mobDrops
+                            mobDrops,
+                            parseMobTargeting(mob.targets(), logger, file)
                     ));
                 }
 
@@ -165,7 +167,7 @@ public final class RaidConfigLoader {
                     }
 
                     for (ParsedMob mob : parsedMobs) {
-                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops());
+                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops(), mob.targeting());
                     }
 
                     wb.completeWhenAllDead();
@@ -245,7 +247,8 @@ public final class RaidConfigLoader {
             EntityType<? extends Mob> type,
             SpawnBehavior behavior,
             Float baseDamage,
-            List<DropEntry> drops
+            List<DropEntry> drops,
+            MobTargeting targeting
     ) {}
 
     public record RaidFile(
@@ -281,9 +284,9 @@ public final class RaidConfigLoader {
 
         public record Completion(String type) {}
 
-        public record Mob(String type, int count, String ai, Double damage, List<Drop> drops) {
+        public record Mob(String type, int count, String ai, Double damage, JsonElement targets, List<Drop> drops) {
             public Mob(String type, int count) {
-                this(type, count, null, null, null);
+                this(type, count, null, null, null, null);
             }
         }
 
@@ -344,6 +347,96 @@ public final class RaidConfigLoader {
 
         logger.warn("[Raidon] Invalid {} in {}. Expected object {{x,y,z}}, array [x,y,z], or string 'x y z'", key, file.getFileName());
         return null;
+    }
+
+    private static MobTargeting parseMobTargeting(JsonElement targets, Logger logger, Path file) {
+        if (targets == null || targets.isJsonNull() || !targets.isJsonObject()) {
+            return MobTargeting.defaults();
+        }
+
+        var root = targets.getAsJsonObject();
+        Double radius = root.has("radius") && root.get("radius").isJsonPrimitive()
+                ? root.get("radius").getAsDouble()
+                : null;
+
+        java.util.Set<ResourceLocation> attackTypes = new java.util.HashSet<>();
+        java.util.Set<ResourceLocation> ignoreTypes = new java.util.HashSet<>();
+        boolean attackAll = false;
+
+        if (root.has("attack")) {
+            attackAll = collectTargets(root.get("attack"), attackTypes, logger, file, "targets.attack") || attackAll;
+        }
+        if (root.has("ignore")) {
+            collectTargets(root.get("ignore"), ignoreTypes, logger, file, "targets.ignore");
+        }
+
+        if (root.has("whitelist") && root.get("whitelist").isJsonObject()) {
+            var whitelist = root.getAsJsonObject("whitelist");
+            if (whitelist.has("attack")) {
+                attackAll = collectTargets(whitelist.get("attack"), attackTypes, logger, file, "targets.whitelist.attack") || attackAll;
+            }
+            if (whitelist.has("ignore")) {
+                collectTargets(whitelist.get("ignore"), ignoreTypes, logger, file, "targets.whitelist.ignore");
+            }
+        }
+
+        if (root.has("blacklist") && root.get("blacklist").isJsonObject()) {
+            var blacklist = root.getAsJsonObject("blacklist");
+            if (blacklist.has("attack")) {
+                collectTargets(blacklist.get("attack"), ignoreTypes, logger, file, "targets.blacklist.attack");
+            }
+            if (blacklist.has("ignore")) {
+                attackTypes.removeAll(collectTargetsAsSet(blacklist.get("ignore"), logger, file, "targets.blacklist.ignore"));
+            }
+        }
+
+        return new MobTargeting(radius, attackAll, attackTypes, ignoreTypes);
+    }
+
+    private static boolean collectTargets(JsonElement element, java.util.Set<ResourceLocation> sink, Logger logger, Path file, String key) {
+        boolean attackAll = false;
+        for (String token : extractStrings(element)) {
+            String normalized = token.trim().toLowerCase();
+            if (normalized.equals("all")) {
+                attackAll = true;
+                continue;
+            }
+            if (normalized.equals("none")) {
+                continue;
+            }
+            ResourceLocation rl = ResourceLocation.tryParse(token);
+            if (rl == null) {
+                logger.warn("[Raidon] Invalid entity id '{}' in {} ({})", token, key, file.getFileName());
+                continue;
+            }
+            sink.add(rl);
+        }
+        return attackAll;
+    }
+
+    private static java.util.Set<ResourceLocation> collectTargetsAsSet(JsonElement element, Logger logger, Path file, String key) {
+        java.util.Set<ResourceLocation> set = new java.util.HashSet<>();
+        collectTargets(element, set, logger, file, key);
+        return set;
+    }
+
+    private static java.util.List<String> extractStrings(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return java.util.List.of();
+        }
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+            return java.util.List.of(element.getAsString());
+        }
+        if (element.isJsonArray()) {
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (JsonElement entry : element.getAsJsonArray()) {
+                if (entry.isJsonPrimitive() && entry.getAsJsonPrimitive().isString()) {
+                    out.add(entry.getAsString());
+                }
+            }
+            return out;
+        }
+        return java.util.List.of();
     }
 
     private static List<DropEntry> parseDrops(List<RaidFile.Drop> drops, Logger logger, Path file) {

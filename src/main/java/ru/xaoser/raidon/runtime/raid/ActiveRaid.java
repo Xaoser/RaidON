@@ -214,7 +214,7 @@ class ActiveRaid implements RaidRuntime {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
-            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.count()));
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.count()));
             total += entry.count();
         }
         pendingMobs.put(wave.index(), pending);
@@ -275,7 +275,7 @@ class ActiveRaid implements RaidRuntime {
                 applyDifficultyScaling(mob, entry);
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
-                MobAiHelper.applyBehavior(mob, entry.behavior(), raidTargetPoint);
+                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint);
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
@@ -475,13 +475,15 @@ class ActiveRaid implements RaidRuntime {
         private final SpawnBehavior behavior;
         private final Float baseDamage;
         private final List<DropEntry> drops;
+        private final ru.xaoser.raidon.api.sup.MobTargeting targeting;
         private int remaining;
 
-        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, int remaining) {
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, ru.xaoser.raidon.api.sup.MobTargeting targeting, int remaining) {
             this.type = type;
             this.behavior = behavior;
             this.baseDamage = baseDamage;
             this.drops = drops == null ? List.of() : List.copyOf(drops);
+            this.targeting = targeting == null ? ru.xaoser.raidon.api.sup.MobTargeting.defaults() : targeting;
             this.remaining = remaining;
         }
 
@@ -499,6 +501,10 @@ class ActiveRaid implements RaidRuntime {
 
         private List<DropEntry> drops() {
             return drops;
+        }
+
+        private ru.xaoser.raidon.api.sup.MobTargeting targeting() {
+            return targeting;
         }
 
         private int remaining() {

@@ -35,7 +35,13 @@ RaidON — настройка и запуск рейдов
   "waves": [
     {
       "mobs": [
-        { "type": "minecraft:cow", "count": 4, "ai": "aggressive", "damage": 3.0 },
+        { "type": "minecraft:cow", "count": 4, "ai": "aggressive", "damage": 3.0,
+          "targets": {
+            "radius": 24,
+            "whitelist": {"attack": ["all", "minecraft:player"], "ignore": ["minecraft:cow"]},
+            "blacklist": {"attack": ["none"], "ignore": ["none"]}
+          }
+        },
         { "type": "minecraft:pig", "count": 4, "ai": "aggressive", "damage": 3.0 }
       ],
       "complete": { "type": "all_dead" },
@@ -71,6 +77,8 @@ AI мобов
 --------
 - У моба можно указать `"ai": "hostile"`/`"aggressive"` (агрессивный) или `"ai": "neutral"` (по умолчанию).
 - Для агрессивных мобов рекомендуется указывать `"damage"`, но если атрибут у сущности отсутствует, мод не крашится.
+- Можно настроить `targets.radius` (дальность агра через FOLLOW_RANGE), а также списки `attack`/`ignore` через `targets` или `targets.whitelist/blacklist`.
+- По умолчанию агрессивные мобы атакуют игроков. `"all"` включает атаку по всем живым сущностям, `"none"` — отключает соответствующий список.
 - Все рейдовые мобы получают цель движения к `points.raidpoint` (или к `mainpoint` по умолчанию).
 
 Встроенный пример
