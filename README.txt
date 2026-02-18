@@ -1,86 +1,225 @@
-RaidON — настройка и запуск рейдов
-=================================
+RaidON — настройка, API и интеграция как библиотека
+===================================================
 
-Как это работает
-----------------
-- При старте сервера Forge мод читает JSON-файлы из `config/raidon/raids/`.
-- Каждый файл описывает рейд: id, сложность, три ключевые точки (центр, спавн, цель рейда), правила спавна и волны мобов.
-- После загрузки рейдов их можно запустить вручную командой `/raidon start <id> [x y z]`.
-- Активные рейды тикают на сервере: при старте волны мобы появляются вокруг центра в заданном радиусе, волна заканчивается когда все мобы мертвы, после последней волны выполняются действия завершения.
+Что умеет мод
+-------------
+- Загружает рейды из JSON из `config/raidon/raids/*.json`.
+- Запускает рейды командами и через Java API.
+- Отрисовывает HUD рейда (волны/мобы/прогресс), включая кастомные текстуры GUI.
+- Синхронизирует HUD при перезаходе игрока, обновляет прогресс в реальном времени и скрывает HUD по `F1`.
 
-Создание/редактирование рейда
------------------------------
-1. Создайте JSON в `config/raidon/raids/` (пример: `goblin_raid.json`):
-```
+Быстрый старт (JSON)
+--------------------
+1. Создайте файл в `config/raidon/raids/`, например `zombie_raid.json`.
+2. Вставьте пример (как вы просили):
+
+```json
 {
-  "id": "raidon:goblin_raid",
-  "difficulty": 6.5,
-
-  "start": { "...": "описание триггера (сейчас хранится для информации)" },
-
+  "id": "raidon:zombie_raid",
+  "difficulty": 2,
+  "start": { "event": "player has join in singleplay world" },
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
     "raidpoint": {"x": 0, "y": 70, "z": 0}
   },
-
+  "gui": {
+    "main": "raidon/gui/frostis.png",
+    "progress": "raidon/gui/frostis_progress.png",
+    "size": "120, 40"
+  },
+  "drops": {
+    "global": [
+      { "item": "minecraft:emerald", "min": 0, "max": 1, "chance": 99.08 },
+      { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 0.25 }
+    ]
+  },
   "spawn": {
     "min_radius": 18,
-    "max_radius": 32,
+    "max_radius": 60,
     "attempts_per_mob": 12,
     "require_ground": true,
     "avoid_water": true
   },
-
   "waves": [
     {
       "mobs": [
-        { "type": "minecraft:cow", "count": 4, "ai": "aggressive", "damage": 3.0,
+        {
+          "type": "minecraft:zombie",
+          "count": 50,
+          "ai": "aggressive",
+          "damage": 3.0,
           "targets": {
-            "radius": 24,
-            "whitelist": {"attack": ["all", "minecraft:player"], "ignore": ["minecraft:cow"]},
-            "blacklist": {"attack": ["none"], "ignore": ["none"]}
-          }
+            "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
+            "blacklist": {"attack": ["none"], "ignore": "none"}
+          },
+          "drops": [
+            { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+          ]
         },
-        { "type": "minecraft:pig", "count": 4, "ai": "aggressive", "damage": 3.0 }
+        {
+          "type": "minecraft:zombie",
+          "count": 40,
+          "ai": "aggressive",
+          "damage": 3.0,
+          "drops": [
+            { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+          ]
+        }
       ],
-      "complete": { "type": "all_dead" },
-      "on_end": [{ "type": "broadcast", "text": "Волна 1 отбита." }]
+      "complete": {"type": "all_dead"},
+      "on_end": [
+        { "type": "broadcast", "text": "Волна 1 отбита." }
+      ]
     },
     {
       "mobs": [
-        { "type": "minecraft:sheep", "count": 6, "ai": "neutral" },
-        { "type": "minecraft:cow", "count": 2, "ai": "hostile" }
+        { "type": "minecraft:zombie", "count": 6, "ai": "aggressive", "damage": 3.0 },
+        { "type": "minecraft:zombie", "count": 2, "ai": "hostile", "damage": 3.0 }
       ],
       "complete": { "type": "all_dead" }
     }
   ],
-
   "on_raid_end": [
-    { "type": "broadcast", "text": "Рейд завершён." }
+    { "type": "broadcast", "text": "congratulation!" }
   ]
 }
 ```
-2. Идентификаторы мобов — полные ResourceLocation (`minecraft:zombie`, `raidon:goblin` и т.п.).
-3. `waves` обязательны. `points` опционален: если `raidspawnpoint` не задан, используется `mainpoint`; если `raidpoint` не задан, мобы идут к `mainpoint`.
-4. Перезапустите сервер или выполните `/reload` с перезапуском, чтобы перечитать файлы (мод перечитывает при старте сервера).
 
-Команда
+> Примечание по GUI-путям: поддерживаются форматы `raidon:gui/file.png` и `raidon/gui/file.png`.
+
+Команды
 -------
 - `/raidon start <id> [x y z]`
-  - `<id>` — id рейда из JSON.
-  - `[x y z]` — необязательный центр. Без координат рейд стартует в точке запуска команды.
-  - Требуемый уровень прав: 2.
-- `/raidon reload` — перечитать все рейды из `config/raidon/raids/` без перезапуска сервера.
+- `/raidon stop <id>`
+- `/raidon reload`
 
-AI мобов
---------
-- У моба можно указать `"ai": "hostile"`/`"aggressive"` (агрессивный) или `"ai": "neutral"` (по умолчанию).
-- Для агрессивных мобов рекомендуется указывать `"damage"`, но если атрибут у сущности отсутствует, мод не крашится.
-- Можно настроить `targets.radius` (дальность агра через FOLLOW_RANGE), а также списки `attack`/`ignore` через `targets` или `targets.whitelist/blacklist`.
-- По умолчанию агрессивные мобы атакуют игроков. `"all"` включает атаку по всем живым сущностям, `"none"` — отключает соответствующий список.
-- Все рейдовые мобы получают цель движения к `points.raidpoint` (или к `mainpoint` по умолчанию).
+Стартовые триггеры рейда (`start`)
+-------------------------------
+Поддерживаемые триггеры старта:
+- `manual` (по умолчанию) — только вручную командой/API.
+- `player_join_any` / `player_join` — автозапуск при входе любого игрока.
+- `player_join_singleplayer` / `player has join in singleplay world` — автозапуск только на singleplayer-сервере.
+- `night_fall` / `night` — автозапуск при наступлении ночи (overworld).
 
-Встроенный пример
+Поля `start`:
+- `event` или `type` — имя триггера.
+- `cooldown_ticks` — кулдаун между автозапусками данного рейда.
+
+Пример:
+```json
+"start": {
+  "event": "night_fall",
+  "cooldown_ticks": 24000
+}
+```
+
+Тонкая настройка мобов (`traits`)
+---------------------------------
+Для каждого моба в волне можно задать:
+- `burn_in_sun` (bool) — может ли гореть под солнцем.
+- `can_drown` (bool) — может ли задыхаться под водой.
+- `knockback_resistance` (0..1) — сопротивление отбрасыванию.
+
+Пример:
+```json
+{
+  "type": "minecraft:zombie",
+  "count": 20,
+  "ai": "aggressive",
+  "traits": {
+    "burn_in_sun": false,
+    "can_drown": false,
+    "knockback_resistance": 0.75
+  }
+}
+```
+
+Как работает HUD
+----------------
+- Если в `gui.main` и `gui.progress` указаны оба пути — используется кастомная текстура.
+- Если хотя бы один путь не задан — рисуется стандартный progress bar.
+- Прогресс заполняется динамически по убийству мобов и переходу волн.
+- HUD скрывается при `F1`.
+- После завершения рейда HUD закрывается.
+- После перезахода игрока HUD восстанавливается по текущему состоянию активного рейда.
+
+Drop шанс (важно)
 -----------------
-- Файл `config/raidon/raids/goblin_raid.json` в репозитории совпадает с примером выше. Скопируйте его в папку конфигов, при необходимости поменяйте id/мобов.
+Теперь шанс в `drops` трактуется как **процент 0..100**:
+- `100` = всегда
+- `50` = 50%
+- `0.25` = 0.25%
+
+Это работает и для `drops.global`, и для `drops` у мобов в волнах.
+
+Что можно триггернуть в конце рейда (`on_raid_end`)
+----------------------------------------------------
+Сейчас поддерживаются действия:
+- `broadcast` — отправить сообщение всем игрокам мира рейда.
+
+Пример:
+```json
+"on_raid_end": [
+  { "type": "broadcast", "text": "Рейд завершён!" }
+]
+```
+
+Интеграция как библиотека (Java API)
+------------------------------------
+Новые публичные API для других модов:
+- `ru.xaoser.raidon.api.RaidonApi`
+- `ru.xaoser.raidon.api.RaidRegistration`
+- `ru.xaoser.raidon.api.RaidGuiBuilder`
+- `ru.xaoser.raidon.api.RaidBuilder` / `WaveBuilder` (создание рейдов кодом)
+
+### 1) Создание рейда полностью через код
+```java
+ResourceLocation raidId = new ResourceLocation("mymod", "library_raid");
+
+Raid raid = new RaidBuilder(raidId)
+        .difficulty(3.0F)
+        .addWave(w -> w
+                .mob(10, EntityType.ZOMBIE, SpawnBehavior.AGGRESSIVE, null, List.of(), MobTargeting.defaults(), new MobTraits(false, false, 0.6D))
+                .completeWhenAllDead())
+        .addWave(w -> w
+                .mob(4, EntityType.SKELETON, SpawnBehavior.HOSTILE)
+                .completeWhenAllDead())
+        .build();
+```
+
+### 2) GUI + настройки и регистрация
+```java
+RaidGuiSettings gui = RaidGuiBuilder.create()
+        .mainTexture(new ResourceLocation("mymod", "gui/raid_main.png"))
+        .progressTexture(new ResourceLocation("mymod", "gui/raid_progress.png"))
+        .size(180, 18)
+        .build();
+
+RaidRegistration registration = new RaidRegistration(
+        raid,
+        new RaidSpawnSettings(18, 60, 12, true, true),
+        RaidPointSettings.DEFAULT,
+        gui,
+        new RaidStartSettings(RaidStartSettings.Trigger.PLAYER_JOIN_ANY, 1200)
+);
+
+RaidonApi.registerRaid(registration);
+```
+
+### 3) Запуск/остановка из кода
+```java
+RaidonApi.startRaid(raidId, serverLevel, centerPos);
+RaidonApi.stopRaid(raidId);
+```
+
+### 4) Получение статуса активных рейдов
+```java
+List<RaidManager.ActiveRaidStatus> statuses = RaidonApi.activeRaids();
+```
+
+Рекомендации для интеграторов
+-----------------------------
+- Регистрируйте рейды в server lifecycle (после поднятия registries).
+- Используйте уникальные `ResourceLocation` id.
+- Если хотите дефолтный HUD, просто не задавайте GUI-текстуры.

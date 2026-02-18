@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Mob;
 import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.MobTargeting;
+import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.WaveCompleteCondition;
 
@@ -32,7 +33,7 @@ public final class WaveBuilder {
     }
 
     public WaveBuilder mob(int count, EntityType<? extends Mob> type, ru.xaoser.raidon.api.sup.SpawnBehavior behavior) {
-        return mob(count, type, behavior, null, List.of(), MobTargeting.defaults());
+        return mob(count, type, behavior, null, List.of(), MobTargeting.defaults(), MobTraits.defaults());
     }
 
     public WaveBuilder mob(
@@ -42,7 +43,7 @@ public final class WaveBuilder {
             Float baseDamage,
             List<DropEntry> drops
     ) {
-        return mob(count, type, behavior, baseDamage, drops, MobTargeting.defaults());
+        return mob(count, type, behavior, baseDamage, drops, MobTargeting.defaults(), MobTraits.defaults());
     }
 
     public WaveBuilder mob(
@@ -53,6 +54,18 @@ public final class WaveBuilder {
             List<DropEntry> drops,
             MobTargeting targeting
     ) {
+        return mob(count, type, behavior, baseDamage, drops, targeting, MobTraits.defaults());
+    }
+
+    public WaveBuilder mob(
+            int count,
+            EntityType<? extends Mob> type,
+            ru.xaoser.raidon.api.sup.SpawnBehavior behavior,
+            Float baseDamage,
+            List<DropEntry> drops,
+            MobTargeting targeting,
+            MobTraits tuning
+    ) {
         if (count <= 0) throw new IllegalArgumentException("count must be > 0");
         mobs.add(new MobEntry(
                 count,
@@ -60,7 +73,8 @@ public final class WaveBuilder {
                 Objects.requireNonNull(behavior, "behavior"),
                 baseDamage,
                 drops,
-                targeting
+                targeting,
+                tuning
         ));
         return this;
     }

@@ -16,5 +16,8 @@ public record DropEntry(Item item, int min, int max, double chance) {
         if (Double.isNaN(chance) || Double.isInfinite(chance)) {
             throw new IllegalArgumentException("chance must be a finite number");
         }
+        if (chance < 0.0 || chance > 100.0) {
+            throw new IllegalArgumentException("chance must be in range 0..100");
+        }
     }
 }

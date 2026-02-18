@@ -55,6 +55,7 @@ public final class MobAiHelper {
         if (mob.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
             mob.goalSelector.addGoal(2, new MeleeAttackGoal(mob, 1.2D, false));
             Predicate<LivingEntity> filter = createTargetFilter(targeting);
+            mob.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(mob, Player.class, true));
             mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, filter));
         }
 

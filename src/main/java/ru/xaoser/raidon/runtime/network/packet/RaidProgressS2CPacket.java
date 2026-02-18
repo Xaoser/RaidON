@@ -46,7 +46,11 @@ public final class RaidProgressS2CPacket {
             int waveIndex,
             int totalWaves,
             int aliveInWave,
-            int totalInWave
+            int totalInWave,
+            ResourceLocation mainTexture,
+            ResourceLocation progressTexture,
+            int barWidth,
+            int barHeight
     ) {
         void encode(FriendlyByteBuf buf) {
             buf.writeResourceLocation(raidId);
@@ -54,6 +58,10 @@ public final class RaidProgressS2CPacket {
             buf.writeVarInt(totalWaves);
             buf.writeVarInt(aliveInWave);
             buf.writeVarInt(totalInWave);
+            buf.writeNullable(mainTexture, FriendlyByteBuf::writeResourceLocation);
+            buf.writeNullable(progressTexture, FriendlyByteBuf::writeResourceLocation);
+            buf.writeVarInt(barWidth);
+            buf.writeVarInt(barHeight);
         }
 
         static Progress decode(FriendlyByteBuf buf) {
@@ -61,6 +69,10 @@ public final class RaidProgressS2CPacket {
                     buf.readResourceLocation(),
                     buf.readVarInt(),
                     buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readNullable(FriendlyByteBuf::readResourceLocation),
+                    buf.readNullable(FriendlyByteBuf::readResourceLocation),
                     buf.readVarInt(),
                     buf.readVarInt()
             );
