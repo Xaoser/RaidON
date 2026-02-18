@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
@@ -11,15 +12,12 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 public enum RaidHudOverlay implements IGuiOverlay {
     INSTANCE;
 
-    private static final int BAR_WIDTH = 120;
-    private static final int BAR_HEIGHT = 12;
-
-
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         if (!RaidHudState.shouldRender()) return;
 
         Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.options.hideGui) return;
         if (mc.gameMode != null && mc.gameMode.getPlayerMode() == GameType.SPECTATOR) return;
 
         Font font = mc.font;
@@ -29,28 +27,41 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int alive = RaidHudState.aliveInWave();
         int total = Math.max(1, RaidHudState.totalInWave());
 
-        int x = screenWidth - BAR_WIDTH - 15;
-        int y = screenHeight - BAR_HEIGHT - 30;
+        ResourceLocation mainTexture = RaidHudState.mainTexture();
+        ResourceLocation progressTexture = RaidHudState.progressTexture();
+        boolean useCustomGui = mainTexture != null && progressTexture != null;
 
-        // Background
-        guiGraphics.fill(x - 4, y - 8, x + BAR_WIDTH + 4, y + BAR_HEIGHT + 8, 0xAA000000);
+        int barWidth = useCustomGui ? Math.max(1, RaidHudState.barWidth()) : 160;
+        int barHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : 12;
 
-        // Wave progress bar
-        float waveProgress = Math.min(1.0F, (waveIndex + 1) / (float) wavesTotal);
-        int waveBarWidth = (int) (BAR_WIDTH * waveProgress);
-        guiGraphics.fill(x, y, x + BAR_WIDTH, y + BAR_HEIGHT, 0xFF333333);
-        guiGraphics.fill(x, y, x + waveBarWidth, y + BAR_HEIGHT, 0xFF4CAF50);
+        int x = screenWidth - barWidth - 15;
+        int y = screenHeight - barHeight - 30;
 
-        // Mob progress bar on top
-        float mobProgress = 1.0F - Math.min(1.0F, alive / (float) total);
-        int mobBar = (int) (BAR_WIDTH * mobProgress);
-        guiGraphics.fill(x, y - 6, x + mobBar, y - 2, 0xFF444444);
-        guiGraphics.fill(x, y - 6, x + BAR_WIDTH, y - 2, 0xFFE0A030);
+        guiGraphics.fill(x - 4, y - 8, x + barWidth + 4, y + barHeight + 18, 0xAA000000);
 
-        // Text
-        Component title = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
-        Component mobs = Component.translatable("raidon.hud.mobs", alive, total);
-        guiGraphics.drawString(font, title, x, y - 18, 0xFFFFFF, false);
-        guiGraphics.drawString(font, mobs, x, y + BAR_HEIGHT + 2, 0xFFFFFF, false);
+        float wavePartProgress = 1.0F - Math.min(1.0F, alive / (float) total);
+        float raidProgress = Math.min(1.0F, (waveIndex + wavePartProgress) / (float) wavesTotal);
+        int waveBarWidth = (int) (barWidth * raidProgress);
+
+        if (useCustomGui) {
+            guiGraphics.blit(mainTexture, x, y, 0, 0, barWidth, barHeight, barWidth, barHeight);
+            guiGraphics.blit(progressTexture, x, y, 0, 0, waveBarWidth, barHeight, barWidth, barHeight);
+        } else {
+            guiGraphics.fill(x, y, x + barWidth, y + barHeight, 0xFF2A2A2A);
+            int fillRight = Math.max(x + 1, Math.min(x + barWidth - 1, x + waveBarWidth - 1));
+            guiGraphics.fill(x + 1, y + 1, fillRight, y + barHeight - 1, 0xFF57B957);
+        }
+
+        Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
+        Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
+
+        if (useCustomGui) {
+            guiGraphics.drawString(font, waveText, x, y - 18, 0xFFFFFF, false);
+            guiGraphics.drawString(font, mobsText, x, y + barHeight + 2, 0xFFFFFF, false);
+        } else {
+            int waveTextX = x + (barWidth - font.width(waveText)) / 2;
+            guiGraphics.drawString(font, waveText, waveTextX, y + 2, 0xFFFFFF, false);
+            guiGraphics.drawString(font, mobsText, x, y + barHeight + 4, 0xFFFFFF, false);
+        }
     }
 }

@@ -35,6 +35,23 @@ public final class RaidHudState {
         return progress == null ? 0 : progress.totalInWave();
     }
 
+
+    public static ResourceLocation mainTexture() {
+        return progress == null ? null : progress.mainTexture();
+    }
+
+    public static ResourceLocation progressTexture() {
+        return progress == null ? null : progress.progressTexture();
+    }
+
+    public static int barWidth() {
+        return progress == null ? 120 : progress.barWidth();
+    }
+
+    public static int barHeight() {
+        return progress == null ? 12 : progress.barHeight();
+    }
+
     public static ResourceLocation raidId() {
         return progress == null ? null : progress.raidId();
     }
