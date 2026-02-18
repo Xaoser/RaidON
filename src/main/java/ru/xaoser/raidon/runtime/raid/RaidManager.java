@@ -151,6 +151,15 @@ public final class RaidManager {
         syncPlayer(player);
     }
 
+
+    @SubscribeEvent
+    public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        syncPlayer(player);
+    }
+
     @SubscribeEvent
     public static void onMobDeath(LivingDeathEvent event) {
         if (event.getEntity().level().isClientSide()) {
