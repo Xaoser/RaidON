@@ -6,6 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -41,8 +42,8 @@ public final class RaidManager {
         ACTIVE.clear();
     }
 
-    public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings) {
-        RAIDS.put(id, new LoadedRaid(raid, spawnSettings, pointSettings));
+    public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings, RaidGuiSettings guiSettings) {
+        RAIDS.put(id, new LoadedRaid(raid, spawnSettings, pointSettings, guiSettings));
         LOGGER.info("Registered raid definition {}", id);
     }
 
@@ -69,7 +70,8 @@ public final class RaidManager {
                 points.mainPoint(),
                 points.spawnPoint(),
                 points.raidTargetPoint(),
-                loaded.spawnSettings()
+                loaded.spawnSettings(),
+                loaded.guiSettings()
         );
         ACTIVE.put(id, active);
         LOGGER.info("Started raid {} center={} spawn={} target={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint());
@@ -136,6 +138,15 @@ public final class RaidManager {
         if (event.phase == TickEvent.Phase.END) tickAll();
     }
 
+
+    @SubscribeEvent
+    public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        syncPlayer(player);
+    }
+
     @SubscribeEvent
     public static void onMobDeath(LivingDeathEvent event) {
         if (event.getEntity().level().isClientSide()) {
@@ -151,7 +162,7 @@ public final class RaidManager {
         }
     }
 
-    public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings) { }
+    public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings, RaidGuiSettings guiSettings) { }
 
     public enum StartResult {
         STARTED,
@@ -186,6 +197,22 @@ public final class RaidManager {
                 RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), packet);
             }
         }
+    }
+
+
+    private static void syncPlayer(ServerPlayer player) {
+        if (RaidNetwork.channel() == null) {
+            return;
+        }
+
+        for (ActiveRaid raid : ACTIVE.values()) {
+            if (isPlayerInRange(player, raid.center())) {
+                RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), new RaidProgressS2CPacket(raid.payload()));
+                return;
+            }
+        }
+
+        RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), new RaidProgressS2CPacket(null));
     }
 
     private static boolean isPlayerInRange(ServerPlayer player, BlockPos center) {
