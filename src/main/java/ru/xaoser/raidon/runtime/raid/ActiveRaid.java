@@ -423,7 +423,7 @@ class ActiveRaid implements RaidRuntime {
 
     private void dropLoot(List<DropEntry> drops, BlockPos pos, RandomSource random) {
         for (DropEntry drop : drops) {
-            if (random.nextDouble() > drop.chance()) {
+            if ((random.nextDouble() * 100.0D) > drop.chance()) {
                 continue;
             }
             int min = drop.min();

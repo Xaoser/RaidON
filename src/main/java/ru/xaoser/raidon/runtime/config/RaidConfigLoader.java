@@ -371,7 +371,14 @@ public final class RaidConfigLoader {
         if (value == null || value.isBlank()) {
             return null;
         }
-        ResourceLocation parsed = ResourceLocation.tryParse(value.trim());
+        String raw = value.trim();
+        if (!raw.contains(":")) {
+            int slash = raw.indexOf('/');
+            if (slash > 0 && slash < raw.length() - 1) {
+                raw = raw.substring(0, slash) + ":" + raw.substring(slash + 1);
+            }
+        }
+        ResourceLocation parsed = ResourceLocation.tryParse(raw);
         if (parsed == null) {
             logger.warn("[Raidon] Invalid {} in {}: '{}'", key, file.getFileName(), value);
             return null;
@@ -520,12 +527,11 @@ public final class RaidConfigLoader {
             }
             int min = Math.max(0, drop.min());
             int max = Math.max(min, drop.max());
-            double normalizedChance = drop.chance() > 1.0 ? drop.chance() / 100.0 : drop.chance();
-            double chance = Math.max(0.0, Math.min(1.0, normalizedChance));
-            if (max == 0 || chance <= 0.0) {
+            double chancePercent = Math.max(0.0, Math.min(100.0, drop.chance()));
+            if (max == 0 || chancePercent <= 0.0) {
                 continue;
             }
-            parsed.add(new DropEntry(BuiltInRegistries.ITEM.get(id), min, max, chance));
+            parsed.add(new DropEntry(BuiltInRegistries.ITEM.get(id), min, max, chancePercent));
         }
         return parsed;
     }

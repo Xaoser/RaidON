@@ -135,7 +135,20 @@ public final class RaidManager {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) tickAll();
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        tickAll();
+        syncAllPlayers();
+    }
+
+
+    @SubscribeEvent
+    public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        syncPlayer(player);
     }
 
 
@@ -193,7 +206,7 @@ public final class RaidManager {
         );
 
         for (ServerPlayer player : raid.level().players()) {
-            if (isPlayerInRange(player, raid.center())) {
+            if (finished || isPlayerInRange(player, raid.center())) {
                 RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), packet);
             }
         }
@@ -205,14 +218,26 @@ public final class RaidManager {
             return;
         }
 
+        RaidProgressS2CPacket packet = new RaidProgressS2CPacket(null);
         for (ActiveRaid raid : ACTIVE.values()) {
-            if (isPlayerInRange(player, raid.center())) {
-                RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), new RaidProgressS2CPacket(raid.payload()));
-                return;
+            if (raid.level() == player.serverLevel() && isPlayerInRange(player, raid.center())) {
+                packet = new RaidProgressS2CPacket(raid.payload());
+                break;
             }
         }
 
-        RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), new RaidProgressS2CPacket(null));
+        RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), packet);
+    }
+
+    private static void syncAllPlayers() {
+        if (ACTIVE.isEmpty()) {
+            return;
+        }
+        for (ActiveRaid raid : ACTIVE.values()) {
+            for (ServerPlayer player : raid.level().players()) {
+                syncPlayer(player);
+            }
+        }
     }
 
     private static boolean isPlayerInRange(ServerPlayer player, BlockPos center) {

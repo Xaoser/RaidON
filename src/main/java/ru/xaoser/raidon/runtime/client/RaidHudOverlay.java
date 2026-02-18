@@ -36,20 +36,28 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int barWidth = useCustomGui ? Math.max(1, RaidHudState.barWidth()) : 160;
         int barHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : 12;
 
+        ResourceLocation mainTexture = RaidHudState.mainTexture();
+        ResourceLocation progressTexture = RaidHudState.progressTexture();
+        boolean useCustomGui = mainTexture != null && progressTexture != null;
+
+        int barWidth = useCustomGui ? Math.max(1, RaidHudState.barWidth()) : 160;
+        int barHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : 12;
+
         int x = screenWidth - barWidth - 15;
         int y = screenHeight - barHeight - 30;
 
         guiGraphics.fill(x - 4, y - 8, x + barWidth + 4, y + barHeight + 18, 0xAA000000);
 
-        float waveProgress = Math.min(1.0F, (waveIndex + 1) / (float) wavesTotal);
-        int waveBarWidth = (int) (barWidth * waveProgress);
+        float wavePartProgress = 1.0F - Math.min(1.0F, alive / (float) total);
+        float raidProgress = Math.min(1.0F, (waveIndex + wavePartProgress) / (float) wavesTotal);
+        int waveBarWidth = (int) (barWidth * raidProgress);
 
         if (useCustomGui) {
             guiGraphics.blit(mainTexture, x, y, 0, 0, barWidth, barHeight, barWidth, barHeight);
             guiGraphics.blit(progressTexture, x, y, 0, 0, waveBarWidth, barHeight, barWidth, barHeight);
         } else {
             guiGraphics.fill(x, y, x + barWidth, y + barHeight, 0xFF2A2A2A);
-            int fillRight = Math.max(x + 1, x + waveBarWidth - 1);
+            int fillRight = Math.max(x + 1, Math.min(x + barWidth - 1, x + waveBarWidth - 1));
             guiGraphics.fill(x + 1, y + 1, fillRight, y + barHeight - 1, 0xFF57B957);
         }
 
