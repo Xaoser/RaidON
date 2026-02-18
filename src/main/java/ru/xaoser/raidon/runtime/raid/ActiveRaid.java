@@ -42,6 +42,7 @@ class ActiveRaid implements RaidRuntime {
     private final BlockPos spawnPoint;
     private final BlockPos raidTargetPoint;
     private final RaidSpawnSettings spawnSettings;
+    private final RaidGuiSettings guiSettings;
     private final BasicRaidContext context;
 
     private int currentWaveIndex = -1;
@@ -55,13 +56,14 @@ class ActiveRaid implements RaidRuntime {
     private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
     private SpawnResult lastSpawnResult = SpawnResult.empty();
 
-    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, RaidSpawnSettings spawnSettings) {
+    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, RaidSpawnSettings spawnSettings, RaidGuiSettings guiSettings) {
         this.raid = raid;
         this.level = level;
         this.center = center.immutable();
         this.spawnPoint = spawnPoint.immutable();
         this.raidTargetPoint = raidTargetPoint.immutable();
         this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
+        this.guiSettings = guiSettings == null ? RaidGuiSettings.DEFAULT : guiSettings;
         this.context = new BasicRaidContext(level, this.center, raid.difficulty());
     }
 
@@ -327,7 +329,11 @@ class ActiveRaid implements RaidRuntime {
                 currentWaveIndex,
                 totalWaves,
                 aliveMobsInCurrentWave(),
-                waveTotal
+                waveTotal,
+                guiSettings.mainTexture(),
+                guiSettings.progressTexture(),
+                guiSettings.width(),
+                guiSettings.height()
         );
     }
 
@@ -417,7 +423,7 @@ class ActiveRaid implements RaidRuntime {
 
     private void dropLoot(List<DropEntry> drops, BlockPos pos, RandomSource random) {
         for (DropEntry drop : drops) {
-            if (random.nextDouble() > drop.chance()) {
+            if ((random.nextDouble() * 100.0D) > drop.chance()) {
                 continue;
             }
             int min = drop.min();

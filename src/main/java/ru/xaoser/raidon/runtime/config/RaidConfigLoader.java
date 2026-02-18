@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
+import com.google.gson.annotations.SerializedName;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -18,6 +19,7 @@ import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
+import ru.xaoser.raidon.runtime.raid.RaidGuiSettings;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
 import ru.xaoser.raidon.runtime.raid.RaidSpawnSettings;
@@ -104,6 +106,7 @@ public final class RaidConfigLoader {
             spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
 
             RaidPointSettings pointSettings = parsePointSettings(model.points(), logger, file);
+            RaidGuiSettings guiSettings = parseGuiSettings(model.gui(), logger, file);
 
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
@@ -186,7 +189,7 @@ public final class RaidConfigLoader {
             }
 
             Raid raid = builder.build();
-            RaidManager.registerRaid(id, raid, spawnSettings, pointSettings);
+            RaidManager.registerRaid(id, raid, spawnSettings, pointSettings, guiSettings);
 
             logger.info("[Raidon] Loaded raid {} from {}", id, file.getFileName());
             return true;
@@ -258,6 +261,7 @@ public final class RaidConfigLoader {
             Points points,
             Drops drops,
             Spawn spawn,
+            @SerializedName(value = "GUI", alternate = {"gui"}) Gui gui,
             List<Wave> waves,
             List<Action> on_raid_end
     ) {
@@ -275,6 +279,8 @@ public final class RaidConfigLoader {
         public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint) {}
 
         public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
+
+        public record Gui(String main, String progress, JsonElement size) {}
 
         public record Wave(List<Mob> mobs, Completion complete, List<Action> on_end, int spawn_radius) {
             public Wave(List<Mob> mobs, Completion complete, List<Action> on_end) {
@@ -347,6 +353,72 @@ public final class RaidConfigLoader {
 
         logger.warn("[Raidon] Invalid {} in {}. Expected object {{x,y,z}}, array [x,y,z], or string 'x y z'", key, file.getFileName());
         return null;
+    }
+
+    private static RaidGuiSettings parseGuiSettings(RaidFile.Gui gui, Logger logger, Path file) {
+        if (gui == null) {
+            return RaidGuiSettings.DEFAULT;
+        }
+
+        ResourceLocation main = parseTexture(gui.main(), logger, file, "gui.main");
+        ResourceLocation progress = parseTexture(gui.progress(), logger, file, "gui.progress");
+        int[] size = parseGuiSize(gui.size(), logger, file);
+
+        return new RaidGuiSettings(main, progress, size[0], size[1]);
+    }
+
+    private static ResourceLocation parseTexture(String value, Logger logger, Path file, String key) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String raw = value.trim();
+        if (!raw.contains(":")) {
+            int slash = raw.indexOf('/');
+            if (slash > 0 && slash < raw.length() - 1) {
+                raw = raw.substring(0, slash) + ":" + raw.substring(slash + 1);
+            }
+        }
+        ResourceLocation parsed = ResourceLocation.tryParse(raw);
+        if (parsed == null) {
+            logger.warn("[Raidon] Invalid {} in {}: '{}'", key, file.getFileName(), value);
+            return null;
+        }
+        return parsed;
+    }
+
+    private static int[] parseGuiSize(JsonElement value, Logger logger, Path file) {
+        int width = RaidGuiSettings.DEFAULT_WIDTH;
+        int height = RaidGuiSettings.DEFAULT_HEIGHT;
+
+        if (value == null || value.isJsonNull()) {
+            return new int[]{width, height};
+        }
+
+        if (value.isJsonArray() && value.getAsJsonArray().size() >= 2) {
+            try {
+                width = value.getAsJsonArray().get(0).getAsInt();
+                height = value.getAsJsonArray().get(1).getAsInt();
+                return new int[]{width, height};
+            } catch (Exception ignored) {
+                // handled below
+            }
+        }
+
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            String[] parts = value.getAsString().trim().split("[,\\s]+");
+            if (parts.length >= 2) {
+                try {
+                    width = Integer.parseInt(parts[0]);
+                    height = Integer.parseInt(parts[1]);
+                    return new int[]{width, height};
+                } catch (NumberFormatException ignored) {
+                    // handled below
+                }
+            }
+        }
+
+        logger.warn("[Raidon] Invalid gui.size in {}. Expected [w,h] or string 'w,h'", file.getFileName());
+        return new int[]{width, height};
     }
 
     private static MobTargeting parseMobTargeting(JsonElement targets, Logger logger, Path file) {
@@ -455,12 +527,11 @@ public final class RaidConfigLoader {
             }
             int min = Math.max(0, drop.min());
             int max = Math.max(min, drop.max());
-            double normalizedChance = drop.chance() > 1.0 ? drop.chance() / 100.0 : drop.chance();
-            double chance = Math.max(0.0, Math.min(1.0, normalizedChance));
-            if (max == 0 || chance <= 0.0) {
+            double chancePercent = Math.max(0.0, Math.min(100.0, drop.chance()));
+            if (max == 0 || chancePercent <= 0.0) {
                 continue;
             }
-            parsed.add(new DropEntry(BuiltInRegistries.ITEM.get(id), min, max, chance));
+            parsed.add(new DropEntry(BuiltInRegistries.ITEM.get(id), min, max, chancePercent));
         }
         return parsed;
     }
