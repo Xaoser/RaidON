@@ -20,6 +20,7 @@ import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidWave;
 import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobEntry;
+import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
@@ -50,6 +51,7 @@ class ActiveRaid implements RaidRuntime {
     private final Map<Integer, Integer> waveTotals = new HashMap<>();
     private final Map<Integer, List<PendingSpawn>> pendingMobs = new HashMap<>();
     private final Map<UUID, List<DropEntry>> mobDrops = new HashMap<>();
+    private final Map<UUID, MobTraits> mobTunings = new HashMap<>();
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
     private boolean completed = false;
@@ -77,6 +79,7 @@ class ActiveRaid implements RaidRuntime {
         }
 
         RaidWave wave = raid.waves().get(currentWaveIndex);
+        tickMobTunings();
         if (hasPendingMobs(currentWaveIndex)) {
             trySpawnPending(wave);
         }
@@ -216,7 +219,7 @@ class ActiveRaid implements RaidRuntime {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
-            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.count()));
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.tuning(), entry.count()));
             total += entry.count();
         }
         pendingMobs.put(wave.index(), pending);
@@ -275,6 +278,7 @@ class ActiveRaid implements RaidRuntime {
                 }
                 created++;
                 applyDifficultyScaling(mob, entry);
+                applyMobTuning(mob, entry.tuning());
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint);
@@ -284,6 +288,9 @@ class ActiveRaid implements RaidRuntime {
                     entry.decrement();
                     if (!entry.drops().isEmpty()) {
                         mobDrops.put(mob.getUUID(), entry.drops());
+                    }
+                    if (!entry.tuning().isDefault()) {
+                        mobTunings.put(mob.getUUID(), entry.tuning());
                     }
                 } else {
                     addFailed++;
@@ -349,6 +356,10 @@ class ActiveRaid implements RaidRuntime {
         return level;
     }
 
+    double hudRange() {
+        return Math.max(192.0D, spawnSettings.maxRadius() + 96.0D);
+    }
+
     void forceComplete() {
         if (completed) return;
         completeRaid();
@@ -387,12 +398,14 @@ class ActiveRaid implements RaidRuntime {
         waveMobs.clear();
         pendingMobs.clear();
         mobDrops.clear();
+        mobTunings.clear();
     }
 
     boolean handleMobDeath(Mob mob) {
         UUID id = mob.getUUID();
         boolean tracked = removeTrackedMob(id);
         List<DropEntry> drops = mobDrops.remove(id);
+        mobTunings.remove(id);
         if (drops != null && !drops.isEmpty()) {
             dropLoot(drops, mob.blockPosition(), level.getRandom());
         }
@@ -461,6 +474,34 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
+    private void tickMobTunings() {
+        for (Map.Entry<UUID, MobTraits> entry : mobTunings.entrySet()) {
+            Entity entity = level.getEntity(entry.getKey());
+            if (!(entity instanceof Mob mob) || !mob.isAlive()) {
+                continue;
+            }
+            MobTraits tuning = entry.getValue();
+            if (Boolean.FALSE.equals(tuning.burnInSun()) && level.isDay() && level.canSeeSky(mob.blockPosition())) {
+                mob.clearFire();
+            }
+            if (Boolean.FALSE.equals(tuning.canDrown())) {
+                mob.setAirSupply(mob.getMaxAirSupply());
+            }
+        }
+    }
+
+    private void applyMobTuning(Mob mob, MobTraits tuning) {
+        if (tuning == null || tuning.isDefault()) {
+            return;
+        }
+        if (tuning.knockbackResistance() != null) {
+            AttributeInstance kb = mob.getAttribute(Attributes.KNOCKBACK_RESISTANCE);
+            if (kb != null) {
+                kb.setBaseValue(Math.max(0.0D, Math.min(1.0D, tuning.knockbackResistance())));
+            }
+        }
+    }
+
     private static float difficultyMultiplier(float difficulty) {
         if (difficulty <= 1.0F) {
             return 0.5F;
@@ -482,14 +523,16 @@ class ActiveRaid implements RaidRuntime {
         private final Float baseDamage;
         private final List<DropEntry> drops;
         private final ru.xaoser.raidon.api.sup.MobTargeting targeting;
+        private final MobTraits tuning;
         private int remaining;
 
-        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, ru.xaoser.raidon.api.sup.MobTargeting targeting, int remaining) {
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, ru.xaoser.raidon.api.sup.MobTargeting targeting, MobTraits tuning, int remaining) {
             this.type = type;
             this.behavior = behavior;
             this.baseDamage = baseDamage;
             this.drops = drops == null ? List.of() : List.copyOf(drops);
             this.targeting = targeting == null ? ru.xaoser.raidon.api.sup.MobTargeting.defaults() : targeting;
+            this.tuning = tuning == null ? MobTraits.defaults() : tuning;
             this.remaining = remaining;
         }
 
@@ -511,6 +554,10 @@ class ActiveRaid implements RaidRuntime {
 
         private ru.xaoser.raidon.api.sup.MobTargeting targeting() {
             return targeting;
+        }
+
+        private MobTraits tuning() {
+            return tuning;
         }
 
         private int remaining() {

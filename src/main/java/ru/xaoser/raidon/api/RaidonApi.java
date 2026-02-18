@@ -7,6 +7,7 @@ import ru.xaoser.raidon.runtime.raid.RaidGuiSettings;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
 import ru.xaoser.raidon.runtime.raid.RaidSpawnSettings;
+import ru.xaoser.raidon.runtime.raid.RaidStartSettings;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +25,8 @@ public final class RaidonApi {
                 raid,
                 registration.spawnSettings(),
                 registration.pointSettings(),
-                registration.guiSettings()
+                registration.guiSettings(),
+                registration.startSettings()
         );
     }
 
@@ -38,7 +40,17 @@ public final class RaidonApi {
             RaidPointSettings pointSettings,
             RaidGuiSettings guiSettings
     ) {
-        registerRaid(new RaidRegistration(raid, spawnSettings, pointSettings, guiSettings));
+        registerRaid(new RaidRegistration(raid, spawnSettings, pointSettings, guiSettings, RaidStartSettings.DEFAULT));
+    }
+
+    public static void registerRaid(
+            Raid raid,
+            RaidSpawnSettings spawnSettings,
+            RaidPointSettings pointSettings,
+            RaidGuiSettings guiSettings,
+            RaidStartSettings startSettings
+    ) {
+        registerRaid(new RaidRegistration(raid, spawnSettings, pointSettings, guiSettings, startSettings));
     }
 
     public static RaidManager.StartResult startRaid(ResourceLocation id, ServerLevel level, BlockPos center) {

@@ -94,6 +94,47 @@ RaidON — настройка, API и интеграция как библиот
 - `/raidon stop <id>`
 - `/raidon reload`
 
+Стартовые триггеры рейда (`start`)
+-------------------------------
+Поддерживаемые триггеры старта:
+- `manual` (по умолчанию) — только вручную командой/API.
+- `player_join_any` / `player_join` — автозапуск при входе любого игрока.
+- `player_join_singleplayer` / `player has join in singleplay world` — автозапуск только на singleplayer-сервере.
+- `night_fall` / `night` — автозапуск при наступлении ночи (overworld).
+
+Поля `start`:
+- `event` или `type` — имя триггера.
+- `cooldown_ticks` — кулдаун между автозапусками данного рейда.
+
+Пример:
+```json
+"start": {
+  "event": "night_fall",
+  "cooldown_ticks": 24000
+}
+```
+
+Тонкая настройка мобов (`traits`)
+---------------------------------
+Для каждого моба в волне можно задать:
+- `burn_in_sun` (bool) — может ли гореть под солнцем.
+- `can_drown` (bool) — может ли задыхаться под водой.
+- `knockback_resistance` (0..1) — сопротивление отбрасыванию.
+
+Пример:
+```json
+{
+  "type": "minecraft:zombie",
+  "count": 20,
+  "ai": "aggressive",
+  "traits": {
+    "burn_in_sun": false,
+    "can_drown": false,
+    "knockback_resistance": 0.75
+  }
+}
+```
+
 Как работает HUD
 ----------------
 - Если в `gui.main` и `gui.progress` указаны оба пути — используется кастомная текстура.
@@ -112,6 +153,18 @@ Drop шанс (важно)
 
 Это работает и для `drops.global`, и для `drops` у мобов в волнах.
 
+Что можно триггернуть в конце рейда (`on_raid_end`)
+----------------------------------------------------
+Сейчас поддерживаются действия:
+- `broadcast` — отправить сообщение всем игрокам мира рейда.
+
+Пример:
+```json
+"on_raid_end": [
+  { "type": "broadcast", "text": "Рейд завершён!" }
+]
+```
+
 Интеграция как библиотека (Java API)
 ------------------------------------
 Новые публичные API для других модов:
@@ -127,7 +180,7 @@ ResourceLocation raidId = new ResourceLocation("mymod", "library_raid");
 Raid raid = new RaidBuilder(raidId)
         .difficulty(3.0F)
         .addWave(w -> w
-                .mob(10, EntityType.ZOMBIE, SpawnBehavior.AGGRESSIVE)
+                .mob(10, EntityType.ZOMBIE, SpawnBehavior.AGGRESSIVE, null, List.of(), MobTargeting.defaults(), new MobTraits(false, false, 0.6D))
                 .completeWhenAllDead())
         .addWave(w -> w
                 .mob(4, EntityType.SKELETON, SpawnBehavior.HOSTILE)
@@ -147,7 +200,8 @@ RaidRegistration registration = new RaidRegistration(
         raid,
         new RaidSpawnSettings(18, 60, 12, true, true),
         RaidPointSettings.DEFAULT,
-        gui
+        gui,
+        new RaidStartSettings(RaidStartSettings.Trigger.PLAYER_JOIN_ANY, 1200)
 );
 
 RaidonApi.registerRaid(registration);

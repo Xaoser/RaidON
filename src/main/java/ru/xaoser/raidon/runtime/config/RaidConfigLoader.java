@@ -17,12 +17,14 @@ import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
 import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobTargeting;
+import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.raid.RaidGuiSettings;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
 import ru.xaoser.raidon.runtime.raid.RaidSpawnSettings;
+import ru.xaoser.raidon.runtime.raid.RaidStartSettings;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -107,6 +109,7 @@ public final class RaidConfigLoader {
 
             RaidPointSettings pointSettings = parsePointSettings(model.points(), logger, file);
             RaidGuiSettings guiSettings = parseGuiSettings(model.gui(), logger, file);
+            RaidStartSettings startSettings = parseStartSettings(model.start());
 
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
@@ -154,7 +157,8 @@ public final class RaidConfigLoader {
                             SpawnBehavior.fromString(mob.ai()),
                             baseDamage,
                             mobDrops,
-                            parseMobTargeting(mob.targets(), logger, file)
+                            parseMobTargeting(mob.targets(), logger, file),
+                            parseMobTuning(mob.traits())
                     ));
                 }
 
@@ -170,7 +174,7 @@ public final class RaidConfigLoader {
                     }
 
                     for (ParsedMob mob : parsedMobs) {
-                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops(), mob.targeting());
+                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops(), mob.targeting(), mob.tuning());
                     }
 
                     wb.completeWhenAllDead();
@@ -189,7 +193,7 @@ public final class RaidConfigLoader {
             }
 
             Raid raid = builder.build();
-            RaidManager.registerRaid(id, raid, spawnSettings, pointSettings, guiSettings);
+            RaidManager.registerRaid(id, raid, spawnSettings, pointSettings, guiSettings, startSettings);
 
             logger.info("[Raidon] Loaded raid {} from {}", id, file.getFileName());
             return true;
@@ -251,7 +255,8 @@ public final class RaidConfigLoader {
             SpawnBehavior behavior,
             Float baseDamage,
             List<DropEntry> drops,
-            MobTargeting targeting
+            MobTargeting targeting,
+            MobTraits tuning
     ) {}
 
     public record RaidFile(
@@ -267,6 +272,7 @@ public final class RaidConfigLoader {
     ) {
         public record Start(
                 String type,
+                String event,
                 long cooldown_ticks,
                 int radius,
                 Center center,
@@ -290,9 +296,9 @@ public final class RaidConfigLoader {
 
         public record Completion(String type) {}
 
-        public record Mob(String type, int count, String ai, Double damage, JsonElement targets, List<Drop> drops) {
+        public record Mob(String type, int count, String ai, Double damage, JsonElement targets, List<Drop> drops, JsonElement traits) {
             public Mob(String type, int count) {
-                this(type, count, null, null, null, null);
+                this(type, count, null, null, null, null, null);
             }
         }
 
@@ -419,6 +425,37 @@ public final class RaidConfigLoader {
 
         logger.warn("[Raidon] Invalid gui.size in {}. Expected [w,h] or string 'w,h'", file.getFileName());
         return new int[]{width, height};
+    }
+
+    private static RaidStartSettings parseStartSettings(RaidFile.Start start) {
+        if (start == null) {
+            return RaidStartSettings.DEFAULT;
+        }
+        String raw = "";
+        if (start.type() != null && !start.type().isBlank()) {
+            raw = start.type();
+        } else if (start.event() != null && !start.event().isBlank()) {
+            raw = start.event();
+        }
+        String normalized = raw.trim().toLowerCase();
+        RaidStartSettings.Trigger trigger = switch (normalized) {
+            case "player_join", "player_join_any", "on_player_join", "player has join" -> RaidStartSettings.Trigger.PLAYER_JOIN_ANY;
+            case "player has join in singleplay world", "player_join_singleplayer", "singleplayer_join" -> RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER;
+            case "night", "night_fall", "on_night" -> RaidStartSettings.Trigger.NIGHT_FALL;
+            default -> RaidStartSettings.Trigger.MANUAL;
+        };
+        return new RaidStartSettings(trigger, start.cooldown_ticks());
+    }
+
+    private static MobTraits parseMobTuning(JsonElement traits) {
+        if (traits == null || traits.isJsonNull() || !traits.isJsonObject()) {
+            return MobTraits.defaults();
+        }
+        var obj = traits.getAsJsonObject();
+        Boolean burnInSun = obj.has("burn_in_sun") ? obj.get("burn_in_sun").getAsBoolean() : null;
+        Boolean canDrown = obj.has("can_drown") ? obj.get("can_drown").getAsBoolean() : null;
+        Double knockbackResistance = obj.has("knockback_resistance") ? obj.get("knockback_resistance").getAsDouble() : null;
+        return new MobTraits(burnInSun, canDrown, knockbackResistance);
     }
 
     private static MobTargeting parseMobTargeting(JsonElement targets, Logger logger, Path file) {
