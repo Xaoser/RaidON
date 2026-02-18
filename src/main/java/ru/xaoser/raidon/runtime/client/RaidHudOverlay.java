@@ -92,6 +92,33 @@ public enum RaidHudOverlay implements IGuiOverlay {
         Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
         Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
 
+        ResourceLocation mainTexture = RaidHudState.mainTexture();
+        ResourceLocation progressTexture = RaidHudState.progressTexture();
+        boolean useCustomGui = mainTexture != null && progressTexture != null;
+
+        int barWidth = useCustomGui ? Math.max(1, (int) (RaidHudState.barWidth() * 0.9F)) : 140;
+        int barHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : 12;
+
+        int x = screenWidth - barWidth - 15;
+        int y = screenHeight - barHeight - 30;
+
+        guiGraphics.fill(x - 4, y - 8, x + barWidth + 4, y + barHeight + 18, 0xAA000000);
+
+        float waveProgress = RaidHudState.smoothWaveProgress();
+        int waveBarWidth = (int) (barWidth * waveProgress);
+
+        if (useCustomGui) {
+            guiGraphics.blit(mainTexture, x, y, 0, 0, barWidth, barHeight, barWidth, barHeight);
+            guiGraphics.blit(progressTexture, x, y, 0, 0, waveBarWidth, barHeight, barWidth, barHeight);
+        } else {
+            guiGraphics.fill(x, y, x + barWidth, y + barHeight, 0xFF2A2A2A);
+            int fillRight = Math.max(x + 1, Math.min(x + barWidth - 1, x + waveBarWidth - 1));
+            guiGraphics.fill(x + 1, y + 1, fillRight, y + barHeight - 1, 0xFF57B957);
+        }
+
+        Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
+        Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
+
         if (useCustomGui) {
             guiGraphics.drawString(font, waveText, x, y - 18, 0xFFFFFF, false);
             guiGraphics.drawString(font, mobsText, x, y + barHeight + 2, 0xFFFFFF, false);
