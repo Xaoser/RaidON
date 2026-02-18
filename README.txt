@@ -223,3 +223,6 @@ List<RaidManager.ActiveRaidStatus> statuses = RaidonApi.activeRaids();
 - Регистрируйте рейды в server lifecycle (после поднятия registries).
 - Используйте уникальные `ResourceLocation` id.
 - Если хотите дефолтный HUD, просто не задавайте GUI-текстуры.
+
+
+Дополнительная документация по стартовым/конечным триггерам вынесена в `TRIGGERS.txt`.

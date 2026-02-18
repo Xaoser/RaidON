@@ -281,6 +281,7 @@ class ActiveRaid implements RaidRuntime {
                 applyMobTuning(mob, entry.tuning());
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
+                mob.addTag(MobAiHelper.RAID_MOB_TAG);
                 MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint);
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
