@@ -12,14 +12,15 @@ public record MobEntry(
         SpawnBehavior behavior,
         Float baseDamage,
         List<DropEntry> drops,
-        MobTargeting targeting
+        MobTargeting targeting,
+        MobTraits tuning
 ) {
     public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior) {
-        this(count, type, behavior, null, List.of(), MobTargeting.defaults());
+        this(count, type, behavior, null, List.of(), MobTargeting.defaults(), MobTraits.defaults());
     }
 
     public MobEntry(int count, EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage) {
-        this(count, type, behavior, baseDamage, List.of(), MobTargeting.defaults());
+        this(count, type, behavior, baseDamage, List.of(), MobTargeting.defaults(), MobTraits.defaults());
     }
 
     public MobEntry {
@@ -27,5 +28,6 @@ public record MobEntry(
         Objects.requireNonNull(behavior, "behavior");
         drops = drops == null ? List.of() : List.copyOf(drops);
         targeting = targeting == null ? MobTargeting.defaults() : targeting;
+        tuning = tuning == null ? MobTraits.defaults() : tuning;
     }
 }

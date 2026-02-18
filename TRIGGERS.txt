@@ -1,0 +1,71 @@
+RaidON Triggers Guide
+=====================
+
+This file describes how raid start/end triggers work in the current RaidON implementation.
+
+1) START TRIGGERS (`start` block in JSON)
+-----------------------------------------
+`start` is optional. If omitted, trigger defaults to `manual`.
+
+Supported fields:
+- `type` (string)      : primary trigger name
+- `event` (string)     : alternative trigger name key (same meaning as `type`)
+- `cooldown_ticks` (long): cooldown between automatic starts for this raid id
+
+Supported trigger values:
+
+A) manual
+   - Meaning: raid starts only via command/API.
+   - Aliases: anything unknown falls back to this mode.
+
+B) player_join_any
+   - Meaning: auto-start when any player logs in.
+   - Aliases: `player_join`, `on_player_join`, `player has join`.
+
+C) player_join_singleplayer
+   - Meaning: auto-start only when a player logs in on a singleplayer-integrated server.
+   - Aliases: `singleplayer_join`, `player has join in singleplay world`.
+
+D) night_fall
+   - Meaning: auto-start automatically during night check (overworld tick checks).
+   - Aliases: `night`, `on_night`.
+
+Cooldown behavior:
+- `cooldown_ticks` applies only to automatic starts.
+- If raid with same id is active, no new autostart will occur.
+- Cooldown is tracked per raid id.
+
+Example:
+{
+  "start": {
+    "event": "night_fall",
+    "cooldown_ticks": 24000
+  }
+}
+
+2) END TRIGGERS / END ACTIONS (`on_raid_end`)
+----------------------------------------------
+When raid finishes (all waves complete OR raid is force-stopped), RaidON executes `on_raid_end` actions.
+
+Current supported action types:
+
+A) broadcast
+   - Payload: `text` (string)
+   - Effect: sends a broadcast message through raid context logic.
+
+Example:
+{
+  "on_raid_end": [
+    { "type": "broadcast", "text": "Raid completed!" }
+  ]
+}
+
+3) WAVE END ACTIONS (`waves[].on_end`)
+--------------------------------------
+Each wave can also have `on_end` actions. Currently action type support is the same as raid end actions.
+
+4) NOTES FOR INTEGRATORS
+------------------------
+- Start trigger configuration is available in code via `RaidStartSettings`.
+- Programmatic registration can pass start trigger settings via `RaidRegistration` / `RaidonApi`.
+- Unknown trigger names are treated as `manual` for safety.
