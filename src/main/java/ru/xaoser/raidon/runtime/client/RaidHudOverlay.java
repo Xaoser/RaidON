@@ -29,37 +29,40 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int barWidth = Math.max(1, RaidHudState.barWidth());
         int barHeight = Math.max(1, RaidHudState.barHeight());
 
+        ResourceLocation mainTexture = RaidHudState.mainTexture();
+        ResourceLocation progressTexture = RaidHudState.progressTexture();
+        boolean useCustomGui = mainTexture != null && progressTexture != null;
+
+        int barWidth = useCustomGui ? Math.max(1, RaidHudState.barWidth()) : 160;
+        int barHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : 12;
+
         int x = screenWidth - barWidth - 15;
         int y = screenHeight - barHeight - 30;
 
-        guiGraphics.fill(x - 4, y - 8, x + barWidth + 4, y + barHeight + 8, 0xAA000000);
+        guiGraphics.fill(x - 4, y - 8, x + barWidth + 4, y + barHeight + 18, 0xAA000000);
 
         float waveProgress = Math.min(1.0F, (waveIndex + 1) / (float) wavesTotal);
         int waveBarWidth = (int) (barWidth * waveProgress);
 
-        ResourceLocation mainTexture = RaidHudState.mainTexture();
-        ResourceLocation progressTexture = RaidHudState.progressTexture();
-
-        if (mainTexture != null) {
+        if (useCustomGui) {
             guiGraphics.blit(mainTexture, x, y, 0, 0, barWidth, barHeight, barWidth, barHeight);
-        } else {
-            guiGraphics.fill(x, y, x + barWidth, y + barHeight, 0xFF333333);
-        }
-
-        if (progressTexture != null) {
             guiGraphics.blit(progressTexture, x, y, 0, 0, waveBarWidth, barHeight, barWidth, barHeight);
         } else {
-            guiGraphics.fill(x, y, x + waveBarWidth, y + barHeight, 0xFF4CAF50);
+            guiGraphics.fill(x, y, x + barWidth, y + barHeight, 0xFF2A2A2A);
+            int fillRight = Math.max(x + 1, x + waveBarWidth - 1);
+            guiGraphics.fill(x + 1, y + 1, fillRight, y + barHeight - 1, 0xFF57B957);
         }
 
-        float mobProgress = 1.0F - Math.min(1.0F, alive / (float) total);
-        int mobBar = (int) (barWidth * mobProgress);
-        guiGraphics.fill(x, y - 6, x + mobBar, y - 2, 0xFF444444);
-        guiGraphics.fill(x, y - 6, x + barWidth, y - 2, 0xFFE0A030);
+        Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
+        Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
 
-        Component title = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
-        Component mobs = Component.translatable("raidon.hud.mobs", alive, total);
-        guiGraphics.drawString(font, title, x, y - 18, 0xFFFFFF, false);
-        guiGraphics.drawString(font, mobs, x, y + barHeight + 2, 0xFFFFFF, false);
+        if (useCustomGui) {
+            guiGraphics.drawString(font, waveText, x, y - 18, 0xFFFFFF, false);
+            guiGraphics.drawString(font, mobsText, x, y + barHeight + 2, 0xFFFFFF, false);
+        } else {
+            int waveTextX = x + (barWidth - font.width(waveText)) / 2;
+            guiGraphics.drawString(font, waveText, waveTextX, y + 2, 0xFFFFFF, false);
+            guiGraphics.drawString(font, mobsText, x, y + barHeight + 4, 0xFFFFFF, false);
+        }
     }
 }
