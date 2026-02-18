@@ -26,6 +26,8 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int waveIndex = Math.max(0, RaidHudState.waveIndex());
         int alive = RaidHudState.aliveInWave();
         int total = Math.max(1, RaidHudState.totalInWave());
+        int barWidth = Math.max(1, RaidHudState.barWidth());
+        int barHeight = Math.max(1, RaidHudState.barHeight());
 
         ResourceLocation mainTexture = RaidHudState.mainTexture();
         ResourceLocation progressTexture = RaidHudState.progressTexture();
