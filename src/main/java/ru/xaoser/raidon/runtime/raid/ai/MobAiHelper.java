@@ -9,10 +9,12 @@ import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.damagesource.DamageSource;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 
@@ -21,6 +23,8 @@ import java.util.function.Predicate;
 
 public final class MobAiHelper {
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
+    private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
+    private static final double DEFAULT_BASE_DAMAGE = 2.0D;
 
     private MobAiHelper() {}
 
@@ -34,7 +38,7 @@ public final class MobAiHelper {
         if (behavior == SpawnBehavior.HOSTILE) {
             setupHostile(pathfinder, cfg, raidTargetPoint);
         } else {
-            setupNeutral(pathfinder, raidTargetPoint);
+            setupNeutral(pathfinder, cfg, raidTargetPoint);
         }
     }
 
@@ -131,12 +135,44 @@ public final class MobAiHelper {
         }
     }
 
-    private static void setupNeutral(PathfinderMob mob, BlockPos raidTargetPoint) {
+    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BlockPos raidTargetPoint) {
         if (raidTargetPoint != null) {
             mob.restrictTo(raidTargetPoint, 16);
             addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
                     () -> new MoveTowardsRestrictionGoal(mob, 1.1D));
         }
+
+        ensureBaseDamage(mob);
+        Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
+
+        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
+                () -> new RaidMeleeAttackGoal(mob, 1.15D, false));
+        addGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
+                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
+    }
+
+
+    private static void ensureBaseDamage(PathfinderMob mob) {
+        AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (damage != null && damage.getBaseValue() <= 0.0D) {
+            damage.setBaseValue(DEFAULT_BASE_DAMAGE);
+            return;
+        }
+        if (!mob.getPersistentData().contains(RAID_BASE_DAMAGE_TAG)) {
+            mob.getPersistentData().putDouble(RAID_BASE_DAMAGE_TAG, DEFAULT_BASE_DAMAGE);
+        }
+    }
+
+    private static double getBaseDamage(PathfinderMob mob) {
+        AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (damage != null) {
+            return Math.max(0.0D, damage.getValue());
+        }
+        if (mob.getPersistentData().contains(RAID_BASE_DAMAGE_TAG)) {
+            return Math.max(0.0D, mob.getPersistentData().getDouble(RAID_BASE_DAMAGE_TAG));
+        }
+        return DEFAULT_BASE_DAMAGE;
     }
 
     private interface GoalSupplier {
@@ -157,6 +193,29 @@ public final class MobAiHelper {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
         if (!exists) {
             mob.targetSelector.addGoal(priority, supplier.get());
+        }
+    }
+
+
+    private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
+        private final PathfinderMob mob;
+
+        private RaidMeleeAttackGoal(PathfinderMob mob, double speedModifier, boolean followingTargetEvenIfNotSeen) {
+            super(mob, speedModifier, followingTargetEvenIfNotSeen);
+            this.mob = mob;
+        }
+
+        @Override
+        protected void checkAndPerformAttack(LivingEntity enemy, double distToEnemySqr) {
+            if (distToEnemySqr <= this.getAttackReachSqr(enemy) && this.isTimeToAttack()) {
+                this.resetAttackCooldown();
+                if (mob.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
+                    mob.doHurtTarget(enemy);
+                    return;
+                }
+                DamageSource source = mob.damageSources().mobAttack(mob);
+                enemy.hurt(source, (float) getBaseDamage(mob));
+            }
         }
     }
 }
