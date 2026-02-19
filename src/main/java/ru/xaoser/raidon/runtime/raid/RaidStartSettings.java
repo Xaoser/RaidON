@@ -9,14 +9,20 @@ public record RaidStartSettings(
         ResourceLocation item,
         ResourceLocation structure,
         ResourceLocation biome,
+        ResourceLocation dimension,
+        java.util.List<Condition> conditions,
         int value
 ) {
-    public static final RaidStartSettings DEFAULT = new RaidStartSettings(Trigger.MANUAL, 0L, null, null, null, null, 0);
+    public static final RaidStartSettings DEFAULT = new RaidStartSettings(Trigger.MANUAL, 0L, null, null, null, null, null, java.util.List.of(), 0);
 
     public RaidStartSettings {
         trigger = trigger == null ? Trigger.MANUAL : trigger;
         cooldownTicks = Math.max(0L, cooldownTicks);
+        conditions = conditions == null ? java.util.List.of() : java.util.List.copyOf(conditions);
         value = Math.max(0, value);
+    }
+
+    public record Condition(String type, int min, int max, int value, ResourceLocation biome, ResourceLocation dimension) {
     }
 
     public enum Trigger {

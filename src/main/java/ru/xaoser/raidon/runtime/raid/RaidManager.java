@@ -151,7 +151,8 @@ public final class RaidManager {
     @SubscribeEvent
     public static void onPlayerDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        triggerEventRaids(player, RaidStartSettings.Trigger.ON_DIMENSION_CHANGE, s -> true);
+        ResourceLocation toDimension = event.getTo().location();
+        triggerEventRaids(player, RaidStartSettings.Trigger.ON_DIMENSION_CHANGE, settings -> settings.dimension() == null || settings.dimension().equals(toDimension));
     }
 
     @SubscribeEvent
@@ -202,6 +203,7 @@ public final class RaidManager {
 
 
     private static void autoStartByPlayerTick(MinecraftServer server) {
+        long tick = server.getTickCount();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ResourceLocation biomeId = player.serverLevel().registryAccess()
                     .registryOrThrow(Registries.BIOME)
@@ -210,16 +212,16 @@ public final class RaidManager {
 
             for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
                 LoadedRaid loaded = entry.getValue();
-                RaidStartSettings.Trigger trigger = loaded.startSettings().trigger();
+                RaidStartSettings settings = loaded.startSettings();
+                RaidStartSettings.Trigger trigger = settings.trigger();
+
                 if (trigger == RaidStartSettings.Trigger.ON_ENTER_BIOME) {
-                    if (!Objects.equals(prevBiome, biomeId)) {
-                        if (loaded.startSettings().biome() == null || loaded.startSettings().biome().equals(biomeId)) {
-                            tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), server.getTickCount());
-                        }
+                    if (!Objects.equals(prevBiome, biomeId) && (settings.biome() == null || settings.biome().equals(biomeId)) && matchesAllConditions(player, settings)) {
+                        tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), tick);
                     }
                 } else if (trigger == RaidStartSettings.Trigger.ON_STRUCTURE_VISIT) {
-                    if (isNearStructure(player, loaded.startSettings().structure(), Math.max(32, loaded.startSettings().value()))) {
-                        tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), server.getTickCount());
+                    if (isNearStructure(player, settings.structure(), Math.max(32, settings.value())) && matchesAllConditions(player, settings)) {
+                        tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), tick);
                     }
                 }
             }
@@ -243,17 +245,58 @@ public final class RaidManager {
         for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
             LoadedRaid loaded = entry.getValue();
             if (loaded.startSettings().trigger() != trigger) continue;
-            if (!predicate.test(loaded.startSettings())) continue;
+            RaidStartSettings settings = loaded.startSettings();
+            if (!predicate.test(settings)) continue;
+            if (!matchesAllConditions(player, settings)) continue;
             tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), tick);
         }
     }
+    private static boolean matchesAllConditions(ServerPlayer player, RaidStartSettings settings) {
+        if (settings.conditions().isEmpty()) {
+            return true;
+        }
+        for (RaidStartSettings.Condition condition : settings.conditions()) {
+            if (!matchesCondition(player, condition)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean matchesCondition(ServerPlayer player, RaidStartSettings.Condition condition) {
+        return switch (condition.type()) {
+            case "min_players" -> player.serverLevel().players().size() >= Math.max(1, condition.value());
+            case "y_between" -> {
+                int y = player.blockPosition().getY();
+                yield y >= condition.min() && y <= condition.max();
+            }
+            case "in_biome" -> {
+                if (condition.biome() == null) {
+                    yield true;
+                }
+                ResourceLocation biomeId = player.serverLevel().registryAccess().registryOrThrow(Registries.BIOME)
+                        .getKey(player.serverLevel().getBiome(player.blockPosition()).value());
+                yield condition.biome().equals(biomeId);
+            }
+            case "in_dimension" -> {
+                if (condition.dimension() == null) {
+                    yield true;
+                }
+                yield condition.dimension().equals(player.serverLevel().dimension().location());
+            }
+            default -> true;
+        };
+    }
+
     private static void autoStartOnLogin(ServerPlayer player) {
         for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
             LoadedRaid loaded = entry.getValue();
             RaidStartSettings.Trigger trigger = loaded.startSettings().trigger();
             if (trigger == RaidStartSettings.Trigger.PLAYER_JOIN_ANY ||
                     (trigger == RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER && player.server.isSingleplayer())) {
-                tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), player.server.getTickCount());
+                if (matchesAllConditions(player, loaded.startSettings())) {
+                    tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), player.server.getTickCount());
+                }
             }
         }
     }

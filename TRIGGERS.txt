@@ -15,7 +15,7 @@ RaidON Triggers & Actions Examples
 "start": { "event": "on_structure_visit", "structure": "minecraft:village_plains", "value": 64 }
 
 5) Смена измерения:
-"start": { "event": "on_dimension_change" }
+"start": { "event": "on_dimension_change", "dimension": "minecraft:the_nether" }
 
 6) Респавн игрока:
 "start": { "event": "on_respawn" }
@@ -101,3 +101,16 @@ RaidON Triggers & Actions Examples
 - Глобальный дроп (drops.global) теперь добавляется к дропу каждого моба рейда.
 - Мобы спавнятся порциями (batch), а не всей волной в один тик.
 - Если точка в воде, система ищет ближайшую землю; если не нашла, спавнит над водой.
+
+
+НЕСКОЛЬКО УСЛОВИЙ ДЛЯ АКТИВАЦИИ
+"start": {
+  "event": "on_kill",
+  "entity": "minecraft:zombie",
+  "conditions": [
+    { "type": "min_players", "value": 2 },
+    { "type": "in_biome", "biome": "minecraft:plains" },
+    { "type": "in_dimension", "dimension": "minecraft:overworld" },
+    { "type": "y_between", "min": 60, "max": 90 }
+  ]
+}

@@ -70,7 +70,7 @@ class ActiveRaid implements RaidRuntime {
         this.mobWanderRadius = Math.max(4, mobWanderRadius);
         this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
         this.guiSettings = guiSettings == null ? RaidGuiSettings.DEFAULT : guiSettings;
-        this.context = new BasicRaidContext(level, this.center, raid.difficulty());
+        this.context = new BasicRaidContext(level, this.center, raid.difficulty(), Math.max(96.0D, spawnSettings.maxRadius() + 48.0D));
     }
 
     void tick() {

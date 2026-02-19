@@ -361,14 +361,14 @@ public final class RaidConfigLoader {
                         if (effect == null) break;
                         int duration = Math.max(20, action.duration() == null ? 200 : action.duration());
                         int amplifier = Math.max(0, action.amplifier() == null ? 0 : action.amplifier());
-                        for (var player : ctx.level().players()) {
+                        for (var player : ctx.playersInRaidZone()) {
                             player.addEffect(new MobEffectInstance(effect, duration, amplifier));
                         }
                     }
                     case "title" -> {
                         if (action.text() == null) break;
                         Component title = Component.literal(action.text());
-                        for (var player : ctx.level().players()) {
+                        for (var player : ctx.playersInRaidZone()) {
                             player.displayClientMessage(title, true);
                         }
                     }
@@ -434,6 +434,7 @@ public final class RaidConfigLoader {
                 String item,
                 String structure,
                 String biome,
+                String dimension,
                 int value,
                 long cooldown_ticks,
                 int radius,
@@ -441,7 +442,7 @@ public final class RaidConfigLoader {
                 List<Condition> conditions
         ) {
             public record Center(String type, String structure, int search_radius, boolean prefer_nearest) {}
-            public record Condition(String type, int min, int max, int value) {}
+            public record Condition(String type, int min, int max, int value, String biome, String dimension) {}
         }
 
         public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint, Integer mob_wander_radius) {}
@@ -621,7 +622,32 @@ public final class RaidConfigLoader {
         ResourceLocation item = ResourceLocation.tryParse(start.item());
         ResourceLocation structure = ResourceLocation.tryParse(start.structure());
         ResourceLocation biome = ResourceLocation.tryParse(start.biome());
-        return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, start.value());
+        ResourceLocation dimension = ResourceLocation.tryParse(start.dimension());
+        List<RaidStartSettings.Condition> conditions = parseStartConditions(start.conditions());
+        return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, dimension, conditions, start.value());
+    }
+
+    private static List<RaidStartSettings.Condition> parseStartConditions(List<RaidFile.Start.Condition> conditions) {
+        if (conditions == null || conditions.isEmpty()) {
+            return List.of();
+        }
+        List<RaidStartSettings.Condition> parsed = new ArrayList<>();
+        for (RaidFile.Start.Condition condition : conditions) {
+            if (condition == null || condition.type() == null || condition.type().isBlank()) {
+                continue;
+            }
+            ResourceLocation biome = ResourceLocation.tryParse(condition.biome());
+            ResourceLocation dimension = ResourceLocation.tryParse(condition.dimension());
+            parsed.add(new RaidStartSettings.Condition(
+                    condition.type().trim().toLowerCase(),
+                    condition.min(),
+                    condition.max(),
+                    condition.value(),
+                    biome,
+                    dimension
+            ));
+        }
+        return List.copyOf(parsed);
     }
 
     private static MobTraits parseMobTuning(JsonElement traits) {
