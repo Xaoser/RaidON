@@ -26,9 +26,12 @@ import java.util.*;
 @Mod.EventBusSubscriber(modid = Raidon.MODID)
 public final class RaidManager {
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int MAX_RAID_TICKS_PER_SERVER_TICK = 4;
 
     private static final Map<ResourceLocation, LoadedRaid> RAIDS = new HashMap<>();
     private static final Map<ResourceLocation, ActiveRaid> ACTIVE = new HashMap<>();
+    private static final List<ResourceLocation> ACTIVE_TICK_ORDER = new ArrayList<>();
+    private static int activeTickCursor = 0;
     private static final Map<ResourceLocation, Long> AUTO_LAST_START = new HashMap<>();
     private static final Map<UUID, ResourceLocation> LAST_PLAYER_BIOME = new HashMap<>();
 
@@ -39,6 +42,8 @@ public final class RaidManager {
     public static void clearAll() {
         clearDefinitions();
         ACTIVE.clear();
+        ACTIVE_TICK_ORDER.clear();
+        activeTickCursor = 0;
         AUTO_LAST_START.clear();
         LAST_PLAYER_BIOME.clear();
     }
@@ -58,9 +63,13 @@ public final class RaidManager {
         if (ACTIVE.containsKey(id)) return StartResult.ALREADY_ACTIVE;
 
         RaidPointSettings.ResolvedPoints points = loaded.pointSettings().resolve(center);
+        if (hasActiveRaidConflict(level, points.mainPoint(), loaded.spawnSettings().maxRadius() + 16.0D)) {
+            return StartResult.AREA_BUSY;
+        }
         ActiveRaid active = new ActiveRaid(loaded.raid(), level, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(),
                 points.mobWanderRadius(), loaded.spawnSettings(), loaded.guiSettings());
         ACTIVE.put(id, active);
+        ACTIVE_TICK_ORDER.add(id);
         LOGGER.info("Started raid {} center={} spawn={} target={} wanderRadius={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(), points.mobWanderRadius());
         sendProgress(active, false);
         return StartResult.STARTED;
@@ -69,6 +78,10 @@ public final class RaidManager {
     public static boolean stopRaid(ResourceLocation id) {
         ActiveRaid raid = ACTIVE.remove(id);
         if (raid == null) return false;
+        ACTIVE_TICK_ORDER.remove(id);
+        if (activeTickCursor >= ACTIVE_TICK_ORDER.size()) {
+            activeTickCursor = 0;
+        }
         raid.forceComplete();
         sendProgress(raid, true);
         LOGGER.info("Raid {} was force-finished", id);
@@ -76,15 +89,52 @@ public final class RaidManager {
     }
 
     public static void tickAll() {
-        Iterator<Map.Entry<ResourceLocation, ActiveRaid>> it = ACTIVE.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<ResourceLocation, ActiveRaid> entry = it.next();
-            ActiveRaid raid = entry.getValue();
+        if (ACTIVE.isEmpty()) {
+            ACTIVE_TICK_ORDER.clear();
+            activeTickCursor = 0;
+            return;
+        }
+
+        ACTIVE_TICK_ORDER.removeIf(id -> !ACTIVE.containsKey(id));
+        for (ResourceLocation id : ACTIVE.keySet()) {
+            if (!ACTIVE_TICK_ORDER.contains(id)) {
+                ACTIVE_TICK_ORDER.add(id);
+            }
+        }
+        if (ACTIVE_TICK_ORDER.isEmpty()) {
+            return;
+        }
+
+        int budget = Math.min(MAX_RAID_TICKS_PER_SERVER_TICK, ACTIVE_TICK_ORDER.size());
+        for (int i = 0; i < budget; i++) {
+            if (ACTIVE_TICK_ORDER.isEmpty()) {
+                activeTickCursor = 0;
+                break;
+            }
+            if (activeTickCursor >= ACTIVE_TICK_ORDER.size()) {
+                activeTickCursor = 0;
+            }
+            ResourceLocation id = ACTIVE_TICK_ORDER.get(activeTickCursor);
+            ActiveRaid raid = ACTIVE.get(id);
+            if (raid == null) {
+                ACTIVE_TICK_ORDER.remove(activeTickCursor);
+                continue;
+            }
+
             raid.tick();
             if (raid.isCompleted()) {
-                it.remove();
-                LOGGER.info("Raid {} completed", entry.getKey());
+                ACTIVE.remove(id);
+                ACTIVE_TICK_ORDER.remove(activeTickCursor);
+                LOGGER.info("Raid {} completed", id);
                 sendProgress(raid, true);
+                if (activeTickCursor >= ACTIVE_TICK_ORDER.size()) {
+                    activeTickCursor = 0;
+                }
+            } else {
+                activeTickCursor++;
+                if (activeTickCursor >= ACTIVE_TICK_ORDER.size()) {
+                    activeTickCursor = 0;
+                }
             }
         }
     }
@@ -164,7 +214,7 @@ public final class RaidManager {
     public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings,
                              RaidGuiSettings guiSettings, RaidStartSettings startSettings) { }
 
-    public enum StartResult { STARTED, NOT_FOUND, ALREADY_ACTIVE; public boolean isStarted(){ return this == STARTED; } }
+    public enum StartResult { STARTED, NOT_FOUND, ALREADY_ACTIVE, AREA_BUSY; public boolean isStarted(){ return this == STARTED; } }
 
     public record ActiveRaidStatus(ResourceLocation id, BlockPos center, int waveIndex, int totalWaves, int aliveInWave, int totalInWave) {}
 
@@ -325,6 +375,21 @@ public final class RaidManager {
         long last = AUTO_LAST_START.getOrDefault(id, Long.MIN_VALUE / 2L);
         if (tick - last < cooldown) return;
         if (startRaid(id, level, center).isStarted()) AUTO_LAST_START.put(id, tick);
+    }
+
+    private static boolean hasActiveRaidConflict(ServerLevel level, BlockPos center, double requestedRadius) {
+        double requestedRadiusSq = requestedRadius * requestedRadius;
+        for (ActiveRaid active : ACTIVE.values()) {
+            if (active.level() != level) {
+                continue;
+            }
+            double distanceSq = active.center().distSqr(center);
+            double minDistance = active.conflictRadius() + requestedRadius;
+            if (distanceSq <= minDistance * minDistance || distanceSq <= requestedRadiusSq) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isPlayerInRange(ServerPlayer player, BlockPos center, double maxDist) {

@@ -69,6 +69,10 @@ public final class RaidonCommand {
                 source.sendFailure(Component.translatable("raidon.command.start.already_active", id));
                 return 0;
             }
+            case AREA_BUSY -> {
+                source.sendFailure(Component.literal("Нельзя запустить рейд: в этой области уже идёт другой рейд."));
+                return 0;
+            }
             case NOT_FOUND -> {
                 source.sendFailure(Component.translatable("raidon.command.start.not_found", id));
                 return 0;

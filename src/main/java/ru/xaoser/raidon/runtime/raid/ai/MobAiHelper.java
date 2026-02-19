@@ -26,6 +26,7 @@ public final class MobAiHelper {
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
+    private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
 
     private MobAiHelper() {}
 
@@ -55,7 +56,7 @@ public final class MobAiHelper {
 
         if (!hasAttackDamageAttribute(mob)) {
             addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 6, MeleeAttackGoal.class,
-                    () -> new RaidMeleeAttackGoal(mob, 1.2D, false));
+                    () -> new RaidMeleeAttackGoal(mob, 1.2D, true));
         }
 
         Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
@@ -73,11 +74,12 @@ public final class MobAiHelper {
     }
 
     private static void setupNeutral(PathfinderMob mob, MobTargeting targeting) {
+        applyFollowRange(mob, targeting.radius());
         ensureBaseDamage(mob);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
         addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.15D, false));
+                () -> new RaidMeleeAttackGoal(mob, 1.15D, true));
         addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
                 () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
         mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
@@ -144,12 +146,10 @@ public final class MobAiHelper {
     }
 
     private static void applyFollowRange(PathfinderMob mob, Double radius) {
-        if (radius == null || radius <= 0.0D) {
-            return;
-        }
         AttributeInstance followRange = mob.getAttribute(Attributes.FOLLOW_RANGE);
         if (followRange != null) {
-            followRange.setBaseValue(Math.max(2.0D, radius));
+            double configured = radius == null || radius <= 0.0D ? MIN_PLAYER_AGGRO_RANGE : radius;
+            followRange.setBaseValue(Math.max(MIN_PLAYER_AGGRO_RANGE, configured));
         }
     }
 

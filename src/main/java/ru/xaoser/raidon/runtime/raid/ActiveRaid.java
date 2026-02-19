@@ -85,7 +85,7 @@ class ActiveRaid implements RaidRuntime {
         RaidWave wave = raid.waves().get(currentWaveIndex);
         tickMobTunings();
         if (hasPendingMobs(currentWaveIndex)) {
-            trySpawnPending(wave);
+            trySpawnPending(currentWaveIndex, wave);
         }
 
         boolean waveComplete = wave.completeCondition().isComplete(this, context);
@@ -133,20 +133,20 @@ class ActiveRaid implements RaidRuntime {
                 spawnSettings.minRadius(), spawnSettings.maxRadius(), spawnSettings.attemptsPerMob(),
                 spawnSettings.requireGround(), spawnSettings.avoidWater(), spawnPoint, raidTargetPoint);
         wave.onWaveStart().run(context);
-        preparePendingWave(wave);
-        trySpawnCurrentWave(wave);
+        preparePendingWave(waveIndex, wave);
+        trySpawnCurrentWave(waveIndex, wave);
         sendProgressIfNeeded();
     }
 
-    private void trySpawnCurrentWave(RaidWave wave) {
-        lastSpawnResult = spawnWaveMobs(wave);
+    private void trySpawnCurrentWave(int waveKey, RaidWave wave) {
+        lastSpawnResult = spawnWaveMobs(waveKey, wave);
 
         while (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts > 0) {
             remainingRespawnAttempts--;
             LOGGER.warn("[Raidon][{}] wave {} spawn failed (planned={}, created={}, spawned={}, posNull={}, addFailed={}). Retrying... (left={})",
                     raid.id(), wave.index(), lastSpawnResult.planned, lastSpawnResult.created, lastSpawnResult.spawned,
                     lastSpawnResult.posNull, lastSpawnResult.addFailed, remainingRespawnAttempts);
-            lastSpawnResult = spawnWaveMobs(wave);
+            lastSpawnResult = spawnWaveMobs(waveKey, wave);
         }
 
         if (lastSpawnResult.planned > 0 && lastSpawnResult.spawned == 0 && remainingRespawnAttempts == 0) {
@@ -157,24 +157,24 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
-    private SpawnResult spawnWaveMobs(RaidWave wave) {
+    private SpawnResult spawnWaveMobs(int waveKey, RaidWave wave) {
         List<UUID> spawned = new ArrayList<>();
         RandomSource random = level.getRandom();
-        int planned = pendingCount(wave.index());
+        int planned = pendingCount(waveKey);
         int created = 0;
         int spawnedCount = 0;
         int posNull = 0;
         int addFailed = 0;
 
-        SpawnAttemptResult attempt = spawnPendingMobs(wave, random);
+        SpawnAttemptResult attempt = spawnPendingMobs(waveKey, wave, random);
         spawned.addAll(attempt.spawned());
         created += attempt.created();
         spawnedCount += attempt.spawnedCount();
         posNull += attempt.posNull();
         addFailed += attempt.addFailed();
 
-        waveMobs.put(wave.index(), spawned);
-        waveTotals.put(wave.index(), planned);
+        waveMobs.put(waveKey, spawned);
+        waveTotals.put(waveKey, planned);
 
         LOGGER.info("[Raidon][{}] spawnWaveMobs wave={} planned={} created={} spawned={} posNull={} addFailed={} center={} spawnPoint={} targetPoint={}",
                 raid.id(), wave.index(), planned, created, spawnedCount, posNull, addFailed, center, spawnPoint, raidTargetPoint);
@@ -239,15 +239,15 @@ class ActiveRaid implements RaidRuntime {
         }
         return !spawnSettings.avoidWater() || !level.getFluidState(pos).isSource();
     }
-    private void preparePendingWave(RaidWave wave) {
+    private void preparePendingWave(int waveKey, RaidWave wave) {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
             pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.tuning(), entry.count()));
             total += entry.count();
         }
-        pendingMobs.put(wave.index(), pending);
-        waveTotals.put(wave.index(), total);
+        pendingMobs.put(waveKey, pending);
+        waveTotals.put(waveKey, total);
     }
 
     private boolean hasPendingMobs(int waveIndex) {
@@ -264,25 +264,25 @@ class ActiveRaid implements RaidRuntime {
         return total;
     }
 
-    private void trySpawnPending(RaidWave wave) {
-        SpawnAttemptResult attempt = spawnPendingMobs(wave, level.getRandom());
+    private void trySpawnPending(int waveKey, RaidWave wave) {
+        SpawnAttemptResult attempt = spawnPendingMobs(waveKey, wave, level.getRandom());
         if (attempt.spawnedCount() > 0) {
-            List<UUID> spawned = waveMobs.computeIfAbsent(wave.index(), key -> new ArrayList<>());
+            List<UUID> spawned = waveMobs.computeIfAbsent(waveKey, key -> new ArrayList<>());
             spawned.addAll(attempt.spawned());
             LOGGER.info("[Raidon][{}] pending spawn wave={} plannedLeft={} created={} spawned={} posNull={} addFailed={}",
-                    raid.id(), wave.index(), pendingCount(wave.index()), attempt.created(), attempt.spawnedCount(),
+                    raid.id(), wave.index(), pendingCount(waveKey), attempt.created(), attempt.spawnedCount(),
                     attempt.posNull(), attempt.addFailed());
         }
     }
 
-    private SpawnAttemptResult spawnPendingMobs(RaidWave wave, RandomSource random) {
+    private SpawnAttemptResult spawnPendingMobs(int waveKey, RaidWave wave, RandomSource random) {
         List<UUID> spawned = new ArrayList<>();
         int created = 0;
         int spawnedCount = 0;
         int posNull = 0;
         int addFailed = 0;
 
-        List<PendingSpawn> pending = pendingMobs.get(wave.index());
+        List<PendingSpawn> pending = pendingMobs.get(waveKey);
         if (pending == null || pending.isEmpty()) {
             return new SpawnAttemptResult(spawned, created, spawnedCount, posNull, addFailed);
         }
@@ -387,6 +387,10 @@ class ActiveRaid implements RaidRuntime {
 
     double hudRange() {
         return Math.max(192.0D, spawnSettings.maxRadius() + 96.0D);
+    }
+
+    double conflictRadius() {
+        return Math.max(48.0D, spawnSettings.maxRadius() + 16.0D);
     }
 
     void forceComplete() {

@@ -48,9 +48,9 @@ public final class RaidConfigLoader {
                 "difficulty": 2,
                 "start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 },
                 "points": {
-                  "mainpoint": {"x": 0, "y": 70, "z": 0},
-                  "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
-                  "raidpoint": {"x": 0, "y": 70, "z": 0}
+                  "mainpoint": {"x": "current", "y": "current", "z": "current"},
+                  "raidspawnpoint": {"x": "current+64", "y": "current", "z": "current+64"},
+                  "raidpoint": {"x": "current", "y": "current", "z": "current"}
                 },
                 "gui": {
                   "size": "120, 40"
@@ -536,15 +536,51 @@ public final class RaidConfigLoader {
         if (points == null) {
             return RaidPointSettings.DEFAULT;
         }
-        return new RaidPointSettings(
-                parsePoint(points.mainpoint(), logger, file, "points.mainpoint"),
-                parsePoint(points.raidspawnpoint(), logger, file, "points.raidspawnpoint"),
-                parsePoint(points.raidpoint(), logger, file, "points.raidpoint"),
-                points.mob_wander_radius()
-        );
+        RaidPointSettings.PointTemplate main = parsePoint(points.mainpoint(), logger, file, "points.mainpoint");
+        RaidPointSettings.PointTemplate spawn = parsePoint(points.raidspawnpoint(), logger, file, "points.raidspawnpoint");
+        RaidPointSettings.PointTemplate target = parsePoint(points.raidpoint(), logger, file, "points.raidpoint");
+
+        if (isLegacyStaticTemplate(main, 0, 70, 0)
+                && isLegacyStaticTemplate(spawn, 64, 70, 64)
+                && isLegacyStaticTemplate(target, 0, 70, 0)) {
+            logger.info("[Raidon] {} uses legacy static example points (0/70/0, 64/70/64). Auto-migrating to current-based templates.", file.getFileName());
+            main = new RaidPointSettings.PointTemplate(
+                    RaidPointSettings.AxisValue.current(0),
+                    RaidPointSettings.AxisValue.current(0),
+                    RaidPointSettings.AxisValue.current(0)
+            );
+            spawn = new RaidPointSettings.PointTemplate(
+                    RaidPointSettings.AxisValue.current(64),
+                    RaidPointSettings.AxisValue.current(0),
+                    RaidPointSettings.AxisValue.current(64)
+            );
+            target = new RaidPointSettings.PointTemplate(
+                    RaidPointSettings.AxisValue.current(0),
+                    RaidPointSettings.AxisValue.current(0),
+                    RaidPointSettings.AxisValue.current(0)
+            );
+        }
+
+        return new RaidPointSettings(main, spawn, target, points.mob_wander_radius());
     }
 
-    private static net.minecraft.core.BlockPos parsePoint(JsonElement element, Logger logger, Path file, String key) {
+    private static boolean isLegacyStaticTemplate(RaidPointSettings.PointTemplate template, int x, int y, int z) {
+        if (template == null) {
+            return false;
+        }
+        return isAxisAbsolute(template.x(), x)
+                && isAxisAbsolute(template.y(), y)
+                && isAxisAbsolute(template.z(), z);
+    }
+
+    private static boolean isAxisAbsolute(RaidPointSettings.AxisValue axis, int expected) {
+        return axis != null
+                && axis.absolute() != null
+                && axis.absolute() == expected
+                && axis.currentOffset() == 0;
+    }
+
+    private static RaidPointSettings.PointTemplate parsePoint(JsonElement element, Logger logger, Path file, String key) {
         if (element == null || element.isJsonNull()) {
             return null;
         }
@@ -553,7 +589,12 @@ public final class RaidConfigLoader {
             var obj = element.getAsJsonObject();
             if (obj.has("x") && obj.has("y") && obj.has("z")) {
                 try {
-                    return new net.minecraft.core.BlockPos(obj.get("x").getAsInt(), obj.get("y").getAsInt(), obj.get("z").getAsInt());
+                    RaidPointSettings.AxisValue x = parseAxisValue(obj.get("x"), logger, file, key + ".x");
+                    RaidPointSettings.AxisValue y = parseAxisValue(obj.get("y"), logger, file, key + ".y");
+                    RaidPointSettings.AxisValue z = parseAxisValue(obj.get("z"), logger, file, key + ".z");
+                    if (x != null && y != null && z != null) {
+                        return new RaidPointSettings.PointTemplate(x, y, z);
+                    }
                 } catch (Exception ignored) {
                     // handled below
                 }
@@ -563,7 +604,12 @@ public final class RaidConfigLoader {
         if (element.isJsonArray() && element.getAsJsonArray().size() == 3) {
             try {
                 var a = element.getAsJsonArray();
-                return new net.minecraft.core.BlockPos(a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt());
+                RaidPointSettings.AxisValue x = parseAxisValue(a.get(0), logger, file, key + "[0]");
+                RaidPointSettings.AxisValue y = parseAxisValue(a.get(1), logger, file, key + "[1]");
+                RaidPointSettings.AxisValue z = parseAxisValue(a.get(2), logger, file, key + "[2]");
+                if (x != null && y != null && z != null) {
+                    return new RaidPointSettings.PointTemplate(x, y, z);
+                }
             } catch (Exception ignored) {
                 // handled below
             }
@@ -574,15 +620,78 @@ public final class RaidConfigLoader {
             String[] parts = raw.split("[,\\s]+");
             if (parts.length == 3) {
                 try {
-                    return new net.minecraft.core.BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-                } catch (NumberFormatException ignored) {
+                    RaidPointSettings.AxisValue x = parseAxisValue(parts[0], logger, file, key + ".x");
+                    RaidPointSettings.AxisValue y = parseAxisValue(parts[1], logger, file, key + ".y");
+                    RaidPointSettings.AxisValue z = parseAxisValue(parts[2], logger, file, key + ".z");
+                    if (x != null && y != null && z != null) {
+                        return new RaidPointSettings.PointTemplate(x, y, z);
+                    }
+                } catch (Exception ignored) {
                     // handled below
                 }
             }
         }
 
-        logger.warn("[Raidon] Invalid {} in {}. Expected object {{x,y,z}}, array [x,y,z], or string 'x y z'", key, file.getFileName());
+        logger.warn("[Raidon] Invalid {} in {}. Expected object {{x,y,z}}, array [x,y,z], or string 'x y z'. Axis values support integers or current/current+N/current-N", key, file.getFileName());
         return null;
+    }
+
+    private static RaidPointSettings.AxisValue parseAxisValue(JsonElement element, Logger logger, Path file, String key) {
+        if (element == null || element.isJsonNull()) {
+            logger.warn("[Raidon] Missing {} in {}", key, file.getFileName());
+            return null;
+        }
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+            return RaidPointSettings.AxisValue.absolute(element.getAsInt());
+        }
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+            return parseAxisValue(element.getAsString(), logger, file, key);
+        }
+
+        logger.warn("[Raidon] Invalid {} in {}. Expected integer or current/current+N/current-N", key, file.getFileName());
+        return null;
+    }
+
+    private static RaidPointSettings.AxisValue parseAxisValue(String rawValue, Logger logger, Path file, String key) {
+        if (rawValue == null) {
+            logger.warn("[Raidon] Missing {} in {}", key, file.getFileName());
+            return null;
+        }
+
+        String value = rawValue.trim().toLowerCase();
+        if (value.isEmpty()) {
+            logger.warn("[Raidon] Invalid {} in {}. Expected integer or current/current+N/current-N", key, file.getFileName());
+            return null;
+        }
+
+        if (value.equals("current")) {
+            return RaidPointSettings.AxisValue.current(0);
+        }
+
+        if (value.startsWith("current+")) {
+            try {
+                return RaidPointSettings.AxisValue.current(Integer.parseInt(value.substring("current+".length()).trim()));
+            } catch (NumberFormatException ignored) {
+                logger.warn("[Raidon] Invalid {} in {}: '{}'", key, file.getFileName(), rawValue);
+                return null;
+            }
+        }
+
+        if (value.startsWith("current-")) {
+            try {
+                return RaidPointSettings.AxisValue.current(-Integer.parseInt(value.substring("current-".length()).trim()));
+            } catch (NumberFormatException ignored) {
+                logger.warn("[Raidon] Invalid {} in {}: '{}'", key, file.getFileName(), rawValue);
+                return null;
+            }
+        }
+
+        try {
+            return RaidPointSettings.AxisValue.absolute(Integer.parseInt(value));
+        } catch (NumberFormatException ignored) {
+            logger.warn("[Raidon] Invalid {} in {}: '{}'", key, file.getFileName(), rawValue);
+            return null;
+        }
     }
 
     private static RaidGuiSettings parseGuiSettings(RaidFile.Gui gui, Logger logger, Path file) {
@@ -678,13 +787,20 @@ public final class RaidConfigLoader {
             case "on_midnight" -> RaidStartSettings.Trigger.ON_MIDNIGHT;
             default -> RaidStartSettings.Trigger.MANUAL;
         };
-        ResourceLocation entity = ResourceLocation.tryParse(start.entity());
-        ResourceLocation item = ResourceLocation.tryParse(start.item());
-        ResourceLocation structure = ResourceLocation.tryParse(start.structure());
-        ResourceLocation biome = ResourceLocation.tryParse(start.biome());
-        ResourceLocation dimension = ResourceLocation.tryParse(start.dimension());
+        ResourceLocation entity = parseOptionalResourceLocation(start.entity());
+        ResourceLocation item = parseOptionalResourceLocation(start.item());
+        ResourceLocation structure = parseOptionalResourceLocation(start.structure());
+        ResourceLocation biome = parseOptionalResourceLocation(start.biome());
+        ResourceLocation dimension = parseOptionalResourceLocation(start.dimension());
         List<RaidStartSettings.Condition> conditions = parseStartConditions(start.conditions());
         return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, dimension, conditions, start.value());
+    }
+
+    private static ResourceLocation parseOptionalResourceLocation(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return ResourceLocation.tryParse(value.trim());
     }
 
     private static List<RaidStartSettings.Condition> parseStartConditions(List<RaidFile.Start.Condition> conditions) {
@@ -696,8 +812,8 @@ public final class RaidConfigLoader {
             if (condition == null || condition.type() == null || condition.type().isBlank()) {
                 continue;
             }
-            ResourceLocation biome = ResourceLocation.tryParse(condition.biome());
-            ResourceLocation dimension = ResourceLocation.tryParse(condition.dimension());
+            ResourceLocation biome = parseOptionalResourceLocation(condition.biome());
+            ResourceLocation dimension = parseOptionalResourceLocation(condition.dimension());
             parsed.add(new RaidStartSettings.Condition(
                     condition.type().trim().toLowerCase(),
                     condition.min(),
