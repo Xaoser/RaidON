@@ -1,0 +1,116 @@
+RaidON Triggers & Actions Examples
+
+СТАРТОВЫЕ ТРИГГЕРЫ (поле "start")
+
+1) Убийство сущности:
+"start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }
+
+2) Подбор предмета:
+"start": { "event": "on_item_pickup", "item": "minecraft:diamond", "cooldown_ticks": 100 }
+
+3) Торговля с жителем (результат сделки):
+"start": { "event": "on_trade", "item": "minecraft:enchanted_book" }
+
+4) Посещение структуры (когда игрок внутри структуры):
+"start": { "event": "on_structure_visit", "structure": "minecraft:village_plains", "value": 64 }
+
+5) Смена измерения:
+"start": { "event": "on_dimension_change", "dimension": "minecraft:the_nether" }
+
+6) Респавн игрока:
+"start": { "event": "on_respawn" }
+
+7) Вход в биом:
+"start": { "event": "on_enter_biome", "biome": "minecraft:desert" }
+
+8) Наступление ночи:
+"start": { "event": "night_fall", "cooldown_ticks": 24000 }
+
+9) Наступление дня:
+"start": { "event": "on_day", "cooldown_ticks": 24000 }
+
+10) Закат:
+"start": { "event": "on_sunset", "cooldown_ticks": 24000 }
+
+11) Полночь:
+"start": { "event": "on_midnight", "cooldown_ticks": 24000 }
+
+12) Вход игрока на сервер:
+"start": { "event": "player_join_any" }
+
+13) Вход в singleplayer мир:
+"start": { "event": "player_join_singleplayer" }
+
+
+КОНЕЧНЫЕ ТРИГГЕРЫ / ДЕЙСТВИЯ РЕЙДА (поле "on_raid_end")
+
+1) Сообщение всем:
+{ "type": "broadcast", "text": "Рейд завершён!" }
+
+2) Призыв мобов:
+{ "type": "summon", "summon": "minecraft:zombie", "value": 10 }
+
+3) Выполнить команду:
+{ "type": "command", "command": "say Рейд завершён" }
+
+4) Изменить время:
+{ "type": "set_time", "time": 18000 }
+
+5) Удар молнией в центре:
+{ "type": "lightning" }
+
+6) Эффект игрокам:
+{ "type": "effect", "effect": "minecraft:regeneration", "duration": 200, "amplifier": 1 }
+
+7) Короткий заголовок в action bar:
+{ "type": "title", "text": "Победа!" }
+
+8) Комбинация действий:
+"on_raid_end": [
+  { "type": "broadcast", "text": "Рейд завершён!" },
+  { "type": "summon", "summon": "minecraft:zombie", "value": 10 },
+  { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 }
+]
+
+9) Смена времени + команда:
+"on_raid_end": [
+  { "type": "set_time", "time": 0 },
+  { "type": "command", "command": "weather clear 1000" }
+]
+
+10) Сообщение + молния:
+"on_raid_end": [
+  { "type": "broadcast", "text": "Финальная волна подавлена" },
+  { "type": "lightning" }
+]
+
+11) Призыв нескольких типов через несколько действий:
+"on_raid_end": [
+  { "type": "summon", "summon": "minecraft:zombie", "value": 5 },
+  { "type": "summon", "summon": "minecraft:skeleton", "value": 5 }
+]
+
+12) Награда баффом:
+"on_raid_end": [
+  { "type": "broadcast", "text": "Команда получила награду!" },
+  { "type": "effect", "effect": "minecraft:hero_of_the_village", "duration": 1200, "amplifier": 0 }
+]
+
+
+ПРИМЕЧАНИЯ
+- Глобальный дроп (drops.global) теперь добавляется к дропу каждого моба рейда.
+- Мобы спавнятся порциями (batch), а не всей волной в один тик.
+- Если точка в воде, система ищет ближайшую землю; если не нашла, спавнит над водой.
+
+
+НЕСКОЛЬКО УСЛОВИЙ ДЛЯ АКТИВАЦИИ
+"start": {
+  "event": "on_kill",
+  "entity": "minecraft:zombie",
+  "conditions": [
+    { "type": "min_players", "value": 2 },
+    { "type": "in_biome", "biome": "minecraft:plains" },
+    { "type": "in_dimension", "dimension": "minecraft:overworld" },
+    { "type": "y_between", "min": 60, "max": 90 }
+  ]
+}

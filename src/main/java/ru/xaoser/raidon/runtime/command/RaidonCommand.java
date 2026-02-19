@@ -80,8 +80,15 @@ public final class RaidonCommand {
     }
 
     private static int reload(CommandSourceStack source) {
-        RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
-        source.sendSuccess(() -> Component.literal("Рейды перезагружены из конфигов."), true);
+        RaidConfigLoader.LoadReport report = RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
+        if (report.hasErrors()) {
+            source.sendFailure(Component.literal("Рейды перезагружены с ошибками: " + report.loaded() + "/" + report.found()));
+            for (String error : report.errors()) {
+                source.sendFailure(Component.literal(" - " + error));
+            }
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Рейды перезагружены успешно: " + report.loaded() + "/" + report.found()), true);
         return 1;
     }
 
