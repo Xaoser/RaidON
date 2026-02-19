@@ -36,7 +36,74 @@ import java.util.Map;
 
 public final class RaidConfigLoader {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-
+    private static final String DEFAULT_RAID_FILE_NAME = "example_raid.json";
+    private static final String DEFAULT_RAID_CONFIG = """
+            {
+                "id": "raidon:example_raid",
+                "difficulty": 2,
+                "start": { "event": "player has join in singleplay world" },
+                "points": {
+                  "mainpoint": {"x": 0, "y": 70, "z": 0},
+                  "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
+                  "raidpoint": {"x": 0, "y": 70, "z": 0}
+                },
+                "gui": {
+                  "size": "120, 40"
+                },
+                "drops": { "global": [
+                  { "item": "minecraft:emerald", "min": 0, "max": 1, "chance": 100 },
+                  { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 0.25 }
+                ]
+                },
+                "spawn": { "min_radius": 18, "max_radius": 60, "attempts_per_mob": 12, "require_ground": true, "avoid_water": true  },
+                "waves": [
+                  {"mobs": [
+                    {"type": "minecraft:chicken",
+                      "count": 300,
+                      "ai": "aggressive",
+                      "damage": 3.0,
+                      "targets": {
+                        "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
+                        "blacklist": {"attack": ["none"], "ignore": "none"}
+                      },
+                      "drops": [
+                        { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+                      ]
+                    },
+                    {"type": "minecraft:zombie",
+                      "count": 40,
+                      "ai": "aggressive",
+                      "damage": 3.0,
+                      "drops": [
+                        { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+                      ]
+                    }
+                  ],
+                    "complete": {"type": "all_dead" },
+                    "on_end": [
+                      { "type": "broadcast", "text": "Волна 1 отбита." }
+                    ]
+                  },
+                  {"mobs": [
+                    { "type": "minecraft:zombie",
+                      "count": 6,
+                      "ai": "aggressive",
+                      "damage": 3.0
+                    },
+                    {"type": "minecraft:zombie",
+                      "count": 2,
+                      "ai": "hostile",
+                      "damage": 3.0
+                    }
+                  ],
+                    "complete": { "type": "all_dead" }
+                  }
+                ],
+                "on_raid_end": [
+                  { "type": "broadcast", "text": "congratulation!" }
+                ]
+              }
+            """;
     private RaidConfigLoader() {}
 
     public static void load(MinecraftServer server, Logger logger) {
@@ -51,6 +118,8 @@ public final class RaidConfigLoader {
             logger.error("[Raidon] Failed to create raid config directory {}", baseDir, e);
             return;
         }
+
+        ensureDefaultConfig(baseDir, logger);
 
         RaidManager.clearDefinitions();
 
@@ -77,6 +146,27 @@ public final class RaidConfigLoader {
         logger.info("[Raidon] Raid load done. loaded={}/{}. Registered now: {}",
                 loaded, found, RaidManager.raidsView().size());
     }
+
+    private static void ensureDefaultConfig(Path baseDir, Logger logger) {
+        try (var stream = Files.list(baseDir)) {
+            boolean hasJson = stream.anyMatch(path -> path.getFileName().toString().endsWith(".json"));
+            if (hasJson) {
+                return;
+            }
+        } catch (IOException e) {
+            logger.error("[Raidon] Failed to inspect raid configs in {}", baseDir, e);
+            return;
+        }
+
+        Path defaultFile = baseDir.resolve(DEFAULT_RAID_FILE_NAME);
+        try {
+            Files.writeString(defaultFile, DEFAULT_RAID_CONFIG);
+            logger.info("[Raidon] Generated default raid config at {}", defaultFile.toAbsolutePath());
+        } catch (IOException e) {
+            logger.error("[Raidon] Failed to write default raid config {}", defaultFile, e);
+        }
+    }
+
 
     /**
      * @return true if the raid file was successfully loaded and registered.

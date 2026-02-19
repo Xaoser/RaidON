@@ -3,12 +3,10 @@ package ru.xaoser.raidon.runtime.raid;
 import net.minecraft.core.BlockPos;
 
 /**
- * Optional raid points loaded from configuration.
- * <ul>
- *     <li>mainPoint - raid center.</li>
- *     <li>spawnPoint - where mobs appear (defaults to main point).</li>
- *     <li>raidTargetPoint - where mobs move to (defaults to main point).</li>
- * </ul>
+ * Optional raid points load from config:
+ *    mainPoint - raid center.
+ *    spawnPoint - where mobs appear (defaults to main point).
+ *    raidTargetPoint - where mobs move to (defaults to main point).
  */
 public record RaidPointSettings(BlockPos mainPoint, BlockPos spawnPoint, BlockPos raidTargetPoint, Integer mobWanderRadius) {
     public static final RaidPointSettings DEFAULT = new RaidPointSettings(null, null, null, null);

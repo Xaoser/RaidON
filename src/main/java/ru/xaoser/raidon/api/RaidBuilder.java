@@ -24,7 +24,7 @@ public final class RaidBuilder {
         this.id = Objects.requireNonNull(id, "id");
     }
 
-    /** Создать волну “по порядку” и настроить её. */
+    // Create and configure Wave
     public RaidBuilder addWave(Consumer<WaveBuilder> config) {
         Objects.requireNonNull(config, "config");
         int idx = nextIndex++;
@@ -33,7 +33,7 @@ public final class RaidBuilder {
         return this;
     }
 
-    /** Создать пустую волну по индексу (можно потом наполнить через wave(index, ...)). */
+    // Creating empty Wave (you can add a content with wave(int index, ....)
     public RaidBuilder addWave(int index) {
         if (index < 0) throw new IllegalArgumentException("Wave index must be >= 0");
         waves.computeIfAbsent(index, WaveBuilder::new);
@@ -42,7 +42,7 @@ public final class RaidBuilder {
         return this;
     }
 
-    /** Донастроить уже существующую волну по индексу. */
+    // Add a content to empty Wave
     public RaidBuilder wave(int index, Consumer<WaveBuilder> config) {
         if (index < 0) throw new IllegalArgumentException("Wave index must be >= 0");
         Objects.requireNonNull(config, "config");
@@ -52,7 +52,7 @@ public final class RaidBuilder {
         return this;
     }
 
-    /** 0..10 влияет на хп/урон (скейлинг делайте в рантайме). */
+    // Difficulty scale a HP and damage
     public RaidBuilder difficulty(float value) {
         if (Float.isNaN(value) || Float.isInfinite(value))
             throw new IllegalArgumentException("Difficulty must be a finite number");
@@ -60,13 +60,13 @@ public final class RaidBuilder {
         return this;
     }
 
-    /** Глобальное действие после завершения всего рейда. */
+    // Action after end of Raid
     public RaidBuilder endAction(RaidAction action) {
         this.endAction = Objects.requireNonNull(action, "action");
         return this;
     }
 
-    /** Глобальные дропы, выдаваемые при завершении рейда. */
+    // Drops from all mobs of Raid
     public RaidBuilder globalDrops(List<DropEntry> drops) {
         this.globalDrops = drops == null ? List.of() : List.copyOf(drops);
         return this;

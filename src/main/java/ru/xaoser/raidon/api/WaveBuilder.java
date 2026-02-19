@@ -85,13 +85,13 @@ public final class WaveBuilder {
         return this;
     }
 
-    /** Стандарт: волна завершается, когда все мобы мертвы (по рантайму). */
+    // Raid ends when all mobs are dead
     public WaveBuilder completeWhenAllDead() {
         this.completeCondition = (rt, ctx) -> rt.aliveMobsInCurrentWave() <= 0;
         return this;
     }
 
-    /** Своя логика завершения волны. */
+    // Custom complete condition
     public WaveBuilder completeCondition(WaveCompleteCondition condition) {
         this.completeCondition = Objects.requireNonNull(condition, "condition");
         return this;
@@ -108,7 +108,6 @@ public final class WaveBuilder {
     }
 
     RaidWave build() {
-        // Можно разрешать пустые волны, если хотите “заглушки”
         return new RaidWave(index, mobs, spawnRadius, completeCondition, onWaveStart, onWaveEnd);
     }
 }
