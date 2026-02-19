@@ -61,7 +61,7 @@ Do you want to make a zombie apocalypse or just make some kind of event?, then t
     ],
       "complete": {"type": "all_dead" },
       "on_end": [
-        { "type": "broadcast", "text": "Волна 1 отбита." }
+        { "type": "broadcast", "text": "Wave 1 end" }
       ]
     },
     {"mobs": [
@@ -105,9 +105,30 @@ Raidpoints
 ### Start:
 - `manual` (default, if start trigger is empty) - 
 - `player_join_any` / `player_join` — autorun if any player join
+  ```"start": { "event": "player_join_any" }```
 - `player_join_singleplayer` / `player has join in singleplay world` — autorun only in singleplayer world.
+  ```"start": { "event": "player_join_singleplayer" }```
 - `night_fall` / `night` — autorun at nightfall (overworld).
-
+  ```"start": { "event": "night_fall", "cooldown_ticks": 24000 }```
+- `on_kill` - run after killing a mob.
+  ```"start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }```
+- `on_item_pickup` - start after pickup item
+  ```"start": { "event": "on_item_pickup", "item": "minecraft:diamond", "cooldown_ticks": 100 }```
+- `on_trade` - start after trading on item
+  ```"start": { "event": "on_structure_visit", "structure": "minecraft:village_plains", "value": 64 }```
+- `on_dimension_change` - start after dimmension changed
+  ```"start": { "event": "on_dimension_change", "dimension": "minecraft:nether" }```
+- `on_respawn` - start when player is respawning
+  ```"start": { "event": "on_respawn" }```
+- `on_enter_biome` - start when player enter biome
+  ```"start": { "event": "on_enter_biome", "biome": "minecraft:desert" }```
+- `on_day` - start at day
+  ```"start": { "event": "on_day", "cooldown_ticks": 24000 }```
+- `on_sunset` - start at sunset
+  ```"start": { "event": "on_sunset", "cooldown_ticks": 24000 }```
+- `on_midnight` - start at midnight
+  ```"start": { "event": "on_midnight", "cooldown_ticks": 24000 }```
+  
 `addition start`:
 - `event` or `type` — name of trigger
 - `cooldown_ticks` — Delay between automatic raid launches
@@ -154,11 +175,12 @@ It works for global and local drops
 End triggers:
 - `broadcast` — send broadcast message to players
 - `summon` - summon mob on end
+- `on_kill` - "start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }
 
 Example
 ```json
 "on_raid_end": [
-  { "type": "broadcast", "text": "Рейд завершён!" },
+  { "type": "broadcast", "text": "Raid is over!" },
   { "type": "summon", "summon": "minecraft:zombie", "value": "10"}
 ]
 ```
