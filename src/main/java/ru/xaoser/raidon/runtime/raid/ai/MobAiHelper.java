@@ -10,7 +10,6 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
@@ -45,8 +44,8 @@ public final class MobAiHelper {
     private static void setupHostile(PathfinderMob mob, MobTargeting targeting, BlockPos raidTargetPoint) {
         if (raidTargetPoint != null) {
             mob.restrictTo(raidTargetPoint, 96);
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
-                    () -> new MoveTowardsRestrictionGoal(mob, 1.1D));
+            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, RaidMoveToPointGoal.class,
+                    () -> new RaidMoveToPointGoal(mob, 1.0D, 30.0D, 60));
         }
 
         applyFollowRange(mob, targeting.radius());
@@ -143,8 +142,8 @@ public final class MobAiHelper {
     private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BlockPos raidTargetPoint) {
         if (raidTargetPoint != null) {
             mob.restrictTo(raidTargetPoint, 16);
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
-                    () -> new MoveTowardsRestrictionGoal(mob, 1.1D));
+            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, RaidMoveToPointGoal.class,
+                    () -> new RaidMoveToPointGoal(mob, 1.0D, 12.0D, 80));
         }
 
         ensureBaseDamage(mob);
@@ -202,6 +201,56 @@ public final class MobAiHelper {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
         if (!exists) {
             mob.targetSelector.addGoal(priority, supplier.get());
+        }
+    }
+
+
+    private static final class RaidMoveToPointGoal extends Goal {
+        private final PathfinderMob mob;
+        private final double speedModifier;
+        private final double minDistanceToCenterSqr;
+        private final int cooldownTicks;
+        private int nextTryTick;
+
+        private RaidMoveToPointGoal(PathfinderMob mob, double speedModifier, double minDistanceToCenter, int cooldownTicks) {
+            this.mob = mob;
+            this.speedModifier = speedModifier;
+            this.minDistanceToCenterSqr = minDistanceToCenter * minDistanceToCenter;
+            this.cooldownTicks = Math.max(20, cooldownTicks);
+            this.nextTryTick = 0;
+        }
+
+        @Override
+        public boolean canUse() {
+            if (!mob.hasRestriction()) {
+                return false;
+            }
+            if (mob.getTarget() != null) {
+                return false;
+            }
+            if (mob.tickCount < nextTryTick) {
+                return false;
+            }
+            return mob.distanceToSqr(mob.getRestrictCenter().getX() + 0.5D,
+                    mob.getRestrictCenter().getY() + 0.5D,
+                    mob.getRestrictCenter().getZ() + 0.5D) > minDistanceToCenterSqr;
+        }
+
+        @Override
+        public void start() {
+            nextTryTick = mob.tickCount + cooldownTicks;
+            BlockPos center = mob.getRestrictCenter();
+            mob.getNavigation().moveTo(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D, speedModifier);
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return mob.getTarget() == null && !mob.getNavigation().isDone();
+        }
+
+        @Override
+        public void stop() {
+            mob.getNavigation().stop();
         }
     }
 
