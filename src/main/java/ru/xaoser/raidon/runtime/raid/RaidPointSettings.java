@@ -17,7 +17,7 @@ public record RaidPointSettings(BlockPos mainPoint, BlockPos spawnPoint, BlockPo
         BlockPos main = mainPoint != null ? mainPoint.immutable() : fallbackCenter.immutable();
         BlockPos spawn = spawnPoint != null ? spawnPoint.immutable() : main;
         BlockPos target = raidTargetPoint != null ? raidTargetPoint.immutable() : main;
-        int wanderRadius = mobWanderRadius != null && mobWanderRadius > 0 ? mobWanderRadius : 32;
+        int wanderRadius = mobWanderRadius != null && mobWanderRadius > 0 ? mobWanderRadius : 50;
         return new ResolvedPoints(main, spawn, target, wanderRadius);
     }
 

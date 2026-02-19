@@ -11,6 +11,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
@@ -37,6 +38,8 @@ public final class MobAiHelper {
 
         if (raidTargetPoint != null) {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
+                    () -> new MoveTowardsRestrictionGoal(pathfinder, 1.0D));
         }
 
         if (behavior == SpawnBehavior.HOSTILE) {

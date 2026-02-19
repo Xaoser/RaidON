@@ -21,7 +21,8 @@ RaidON — настройка, API и интеграция как библиот
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
-    "raidpoint": {"x": 0, "y": 70, "z": 0}
+    "raidpoint": {"x": 0, "y": 70, "z": 0},
+    "mob_wander_radius": 50
   },
   "gui": {
     "main": "raidon/gui/frostis.png",
@@ -87,6 +88,15 @@ RaidON — настройка, API и интеграция как библиот
 ```
 
 > Примечание по GUI-путям: поддерживаются форматы `raidon:gui/file.png` и `raidon/gui/file.png`.
+
+Параметры точки рейда (`points`)
+-------------------------------
+- `mainpoint` — центр рейда.
+- `raidspawnpoint` — точка спавна мобов.
+- `raidpoint` — точка сбора мобов (НЕ точка спавна).
+- `mob_wander_radius` — радиус зоны сбора вокруг `raidpoint` (по умолчанию `50`).
+  - Если моб вышел за пределы зоны (например, преследовал цель), он возвращается в зону.
+  - Внутри зоны мобы ведут себя как обычные мобы.
 
 Команды
 -------
@@ -172,6 +182,7 @@ Drop шанс (важно)
 - `ru.xaoser.raidon.api.RaidRegistration`
 - `ru.xaoser.raidon.api.RaidGuiBuilder`
 - `ru.xaoser.raidon.api.RaidBuilder` / `WaveBuilder` (создание рейдов кодом)
+- `ru.xaoser.raidon.runtime.raid.RaidPointSettings` (настройка `mainpoint/raidspawnpoint/raidpoint/mob_wander_radius`)
 
 ### 1) Создание рейда полностью через код
 ```java
