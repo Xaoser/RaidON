@@ -8,7 +8,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.TradeWithVillagerEvent;
+import net.minecraft.core.registries.Registries;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
@@ -27,6 +30,7 @@ public final class RaidManager {
     private static final Map<ResourceLocation, LoadedRaid> RAIDS = new HashMap<>();
     private static final Map<ResourceLocation, ActiveRaid> ACTIVE = new HashMap<>();
     private static final Map<ResourceLocation, Long> AUTO_LAST_START = new HashMap<>();
+    private static final Map<UUID, ResourceLocation> LAST_PLAYER_BIOME = new HashMap<>();
 
     private RaidManager() {}
 
@@ -36,6 +40,7 @@ public final class RaidManager {
         clearDefinitions();
         ACTIVE.clear();
         AUTO_LAST_START.clear();
+        LAST_PLAYER_BIOME.clear();
     }
 
     public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings,
@@ -104,6 +109,7 @@ public final class RaidManager {
         if (event.phase != TickEvent.Phase.END) return;
         tickAll();
         autoStartByTick(event.getServer());
+        autoStartByPlayerTick(event.getServer());
         syncAllPlayers();
     }
 
@@ -121,8 +127,39 @@ public final class RaidManager {
         for (ActiveRaid raid : ACTIVE.values()) {
             if (raid.handleMobDeath(mob)) break;
         }
+
+        if (event.getSource().getEntity() instanceof ServerPlayer player) {
+            ResourceLocation killed = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
+            triggerEventRaids(player, RaidStartSettings.Trigger.ON_KILL, s -> s.entity() == null || s.entity().equals(killed));
+        }
     }
 
+
+    @SubscribeEvent
+    public static void onItemPickup(EntityItemPickupEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        ResourceLocation itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(event.getItem().getItem().getItem());
+        triggerEventRaids(player, RaidStartSettings.Trigger.ON_ITEM_PICKUP, s -> s.item() == null || s.item().equals(itemId));
+    }
+
+    @SubscribeEvent
+    public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        triggerEventRaids(player, RaidStartSettings.Trigger.ON_RESPAWN, s -> true);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        triggerEventRaids(player, RaidStartSettings.Trigger.ON_DIMENSION_CHANGE, s -> true);
+    }
+
+    @SubscribeEvent
+    public static void onTrade(TradeWithVillagerEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        ResourceLocation itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(event.getMerchantOffer().getResult().getItem());
+        triggerEventRaids(player, RaidStartSettings.Trigger.ON_TRADE, s -> s.item() == null || s.item().equals(itemId));
+    }
     public record LoadedRaid(Raid raid, RaidSpawnSettings spawnSettings, RaidPointSettings pointSettings,
                              RaidGuiSettings guiSettings, RaidStartSettings startSettings) { }
 
@@ -163,6 +200,53 @@ public final class RaidManager {
         }
     }
 
+
+    private static void autoStartByPlayerTick(MinecraftServer server) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            ResourceLocation biomeId = player.serverLevel().registryAccess()
+                    .registryOrThrow(Registries.BIOME)
+                    .getKey(player.serverLevel().getBiome(player.blockPosition()).value());
+            ResourceLocation prevBiome = LAST_PLAYER_BIOME.put(player.getUUID(), biomeId);
+
+            for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
+                LoadedRaid loaded = entry.getValue();
+                RaidStartSettings.Trigger trigger = loaded.startSettings().trigger();
+                if (trigger == RaidStartSettings.Trigger.ON_ENTER_BIOME) {
+                    if (!Objects.equals(prevBiome, biomeId)) {
+                        if (loaded.startSettings().biome() == null || loaded.startSettings().biome().equals(biomeId)) {
+                            tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), server.getTickCount());
+                        }
+                    }
+                } else if (trigger == RaidStartSettings.Trigger.ON_STRUCTURE_VISIT) {
+                    if (isNearStructure(player, loaded.startSettings().structure(), Math.max(32, loaded.startSettings().value()))) {
+                        tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), server.getTickCount());
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isNearStructure(ServerPlayer player, ResourceLocation structureId, int radius) {
+        if (structureId == null) {
+            return false;
+        }
+        var key = net.minecraft.resources.ResourceKey.create(Registries.STRUCTURE, structureId);
+        var structureCheck = player.serverLevel().structureManager().getStructureWithPieceAt(player.blockPosition(), key);
+        if (structureCheck.isValid()) {
+            return true;
+        }
+        return false;
+    }
+
+    private static void triggerEventRaids(ServerPlayer player, RaidStartSettings.Trigger trigger, java.util.function.Predicate<RaidStartSettings> predicate) {
+        long tick = player.server.getTickCount();
+        for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
+            LoadedRaid loaded = entry.getValue();
+            if (loaded.startSettings().trigger() != trigger) continue;
+            if (!predicate.test(loaded.startSettings())) continue;
+            tryAutoStart(entry.getKey(), loaded, player.serverLevel(), player.blockPosition(), tick);
+        }
+    }
     private static void autoStartOnLogin(ServerPlayer player) {
         for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
             LoadedRaid loaded = entry.getValue();
@@ -178,10 +262,17 @@ public final class RaidManager {
         long tick = server.getTickCount();
         for (Map.Entry<ResourceLocation, LoadedRaid> entry : RAIDS.entrySet()) {
             LoadedRaid loaded = entry.getValue();
-            if (loaded.startSettings().trigger() != RaidStartSettings.Trigger.NIGHT_FALL) continue;
             ServerLevel level = server.overworld();
-            if (level.isDay()) continue;
-            tryAutoStart(entry.getKey(), loaded, level, level.getSharedSpawnPos(), tick);
+            RaidStartSettings.Trigger trigger = loaded.startSettings().trigger();
+            if (trigger == RaidStartSettings.Trigger.NIGHT_FALL && !level.isDay()) {
+                tryAutoStart(entry.getKey(), loaded, level, level.getSharedSpawnPos(), tick);
+            } else if (trigger == RaidStartSettings.Trigger.ON_DAY && level.isDay()) {
+                tryAutoStart(entry.getKey(), loaded, level, level.getSharedSpawnPos(), tick);
+            } else if (trigger == RaidStartSettings.Trigger.ON_SUNSET && level.getDayTime() % 24000L >= 12000L && level.getDayTime() % 24000L <= 12200L) {
+                tryAutoStart(entry.getKey(), loaded, level, level.getSharedSpawnPos(), tick);
+            } else if (trigger == RaidStartSettings.Trigger.ON_MIDNIGHT && level.getDayTime() % 24000L >= 18000L && level.getDayTime() % 24000L <= 18200L) {
+                tryAutoStart(entry.getKey(), loaded, level, level.getSharedSpawnPos(), tick);
+            }
         }
     }
 

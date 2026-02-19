@@ -5,13 +5,18 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
 import com.google.gson.annotations.SerializedName;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraft.network.chat.Component;
+import net.minecraft.commands.CommandSourceStack;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
@@ -41,7 +46,7 @@ public final class RaidConfigLoader {
             {
                 "id": "raidon:example_raid",
                 "difficulty": 2,
-                "start": { "event": "player has join in singleplay world" },
+                "start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 },
                 "points": {
                   "mainpoint": {"x": 0, "y": 70, "z": 0},
                   "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
@@ -100,13 +105,14 @@ public final class RaidConfigLoader {
                   }
                 ],
                 "on_raid_end": [
-                  { "type": "broadcast", "text": "congratulation!" }
+                  { "type": "broadcast", "text": "Рейд завершён!" },
+                  { "type": "summon", "summon": "minecraft:zombie", "value": 10 }
                 ]
               }
             """;
     private RaidConfigLoader() {}
 
-    public static void load(MinecraftServer server, Logger logger) {
+    public static LoadReport load(MinecraftServer server, Logger logger) {
 
         // Correct Forge config dir in 1.20.1
         Path baseDir = FMLPaths.CONFIGDIR.get().resolve("raidon").resolve("raids");
@@ -116,7 +122,7 @@ public final class RaidConfigLoader {
             Files.createDirectories(baseDir);
         } catch (IOException e) {
             logger.error("[Raidon] Failed to create raid config directory {}", baseDir, e);
-            return;
+            return LoadReport.failed("Не удалось создать директорию конфигов: " + baseDir, e);
         }
 
         ensureDefaultConfig(baseDir, logger);
@@ -125,6 +131,7 @@ public final class RaidConfigLoader {
 
         int found = 0;
         int loaded = 0;
+        List<String> errors = new ArrayList<>();
 
         try (var stream = Files.list(baseDir)) {
             var files = stream
@@ -135,16 +142,21 @@ public final class RaidConfigLoader {
             logger.info("[Raidon] Found {} raid json file(s)", found);
 
             for (Path file : files) {
-                if (loadSingle(server, file, logger)) {
+                LoadIssue issue = loadSingle(server, file, logger);
+                if (issue.success()) {
                     loaded++;
+                } else {
+                    errors.add(issue.message());
                 }
             }
         } catch (IOException e) {
             logger.error("[Raidon] Failed to list raid configs in {}", baseDir, e);
+            errors.add("Ошибка чтения директории конфигов " + baseDir + ": " + e.getMessage());
         }
 
         logger.info("[Raidon] Raid load done. loaded={}/{}. Registered now: {}",
                 loaded, found, RaidManager.raidsView().size());
+        return new LoadReport(found, loaded, errors);
     }
 
     private static void ensureDefaultConfig(Path baseDir, Logger logger) {
@@ -171,18 +183,18 @@ public final class RaidConfigLoader {
     /**
      * @return true if the raid file was successfully loaded and registered.
      */
-    private static boolean loadSingle(MinecraftServer server, Path file, Logger logger) {
+    private static LoadIssue loadSingle(MinecraftServer server, Path file, Logger logger) {
         try (Reader reader = Files.newBufferedReader(file)) {
             RaidFile model = GSON.fromJson(reader, RaidFile.class);
             if (model == null) {
                 logger.warn("[Raidon] Skipping empty raid file {}", file.getFileName());
-                return false;
+                return LoadIssue.failed(file, "Пустой или невалидный JSON объект");
             }
 
             ResourceLocation id = ResourceLocation.tryParse(model.id());
             if (id == null) {
                 logger.warn("[Raidon] Invalid raid id in {}: {}", file.getFileName(), model.id());
-                return false;
+                return LoadIssue.failed(file, "Некорректный raid id: " + model.id());
             }
 
             // Spawn settings
@@ -204,7 +216,7 @@ public final class RaidConfigLoader {
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
                 logger.warn("[Raidon] Raid {} has no waves, skipping ({})", id, file.getFileName());
-                return false;
+                return LoadIssue.failed(file, "Отсутствуют волны");
             }
 
             List<DropEntry> globalDrops = parseDrops(model.drops() == null ? null : model.drops().global(), logger, file);
@@ -279,21 +291,21 @@ public final class RaidConfigLoader {
 
             if (!hasValidWave) {
                 logger.warn("[Raidon] Raid {} has no valid waves, skipping ({})", id, file.getFileName());
-                return false;
+                return LoadIssue.failed(file, "Нет валидных волн после парсинга");
             }
 
             Raid raid = builder.build();
             RaidManager.registerRaid(id, raid, spawnSettings, pointSettings, guiSettings, startSettings);
 
             logger.info("[Raidon] Loaded raid {} from {}", id, file.getFileName());
-            return true;
+            return LoadIssue.ok(file);
 
         } catch (IOException | JsonParseException | IllegalArgumentException e) {
             logger.error("[Raidon] Failed to parse raid file {}", file.getFileName(), e);
-            return false;
+            return LoadIssue.failed(file, "Ошибка парсинга: " + e.getMessage(), e);
         } catch (Exception e) {
             logger.error("[Raidon] Unexpected error while loading {}", file.getFileName(), e);
-            return false;
+            return LoadIssue.failed(file, "Неожиданная ошибка: " + e.getMessage(), e);
         }
     }
 
@@ -305,8 +317,63 @@ public final class RaidConfigLoader {
 
         return ctx -> {
             for (RaidFile.Action action : immutable) {
-                if ("broadcast".equalsIgnoreCase(action.type()) && action.text() != null) {
-                    ctx.broadcast(action.text());
+                if (action.type() == null) {
+                    continue;
+                }
+                switch (action.type().toLowerCase()) {
+                    case "broadcast" -> {
+                        if (action.text() != null) ctx.broadcast(action.text());
+                    }
+                    case "summon" -> {
+                        ResourceLocation summonId = ResourceLocation.tryParse(action.summon());
+                        if (summonId == null) break;
+                        EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(summonId);
+                        int count = Math.max(1, action.value() == null ? 1 : action.value());
+                        for (int i = 0; i < count; i++) {
+                            Entity entity = type.create(ctx.level());
+                            if (entity == null) continue;
+                            BlockPos pos = ctx.center().offset(ctx.level().random.nextInt(7) - 3, 1, ctx.level().random.nextInt(7) - 3);
+                            entity.moveTo(pos, ctx.level().random.nextFloat() * 360.0F, 0.0F);
+                            ctx.level().addFreshEntity(entity);
+                        }
+                    }
+                    case "command" -> {
+                        if (action.command() == null || action.command().isBlank()) break;
+                        CommandSourceStack source = ctx.level().getServer().createCommandSourceStack().withPermission(2);
+                        ctx.level().getServer().getCommands().performPrefixedCommand(source, action.command());
+                    }
+                    case "set_time" -> {
+                        if (action.time() != null) ctx.level().setDayTime(action.time());
+                    }
+                    case "lightning" -> {
+                        var bolt = EntityType.LIGHTNING_BOLT.create(ctx.level());
+                        if (bolt != null) {
+                            BlockPos pos = ctx.center();
+                            bolt.moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
+                            ctx.level().addFreshEntity(bolt);
+                        }
+                    }
+                    case "effect" -> {
+                        if (action.effect() == null) break;
+                        ResourceLocation effectId = ResourceLocation.tryParse(action.effect());
+                        if (effectId == null) break;
+                        MobEffect effect = BuiltInRegistries.MOB_EFFECT.get(effectId);
+                        if (effect == null) break;
+                        int duration = Math.max(20, action.duration() == null ? 200 : action.duration());
+                        int amplifier = Math.max(0, action.amplifier() == null ? 0 : action.amplifier());
+                        for (var player : ctx.level().players()) {
+                            player.addEffect(new MobEffectInstance(effect, duration, amplifier));
+                        }
+                    }
+                    case "title" -> {
+                        if (action.text() == null) break;
+                        Component title = Component.literal(action.text());
+                        for (var player : ctx.level().players()) {
+                            player.displayClientMessage(title, true);
+                        }
+                    }
+                    default -> {
+                    }
                 }
             }
         };
@@ -363,6 +430,11 @@ public final class RaidConfigLoader {
         public record Start(
                 String type,
                 String event,
+                String entity,
+                String item,
+                String structure,
+                String biome,
+                int value,
                 long cooldown_ticks,
                 int radius,
                 Center center,
@@ -392,7 +464,7 @@ public final class RaidConfigLoader {
             }
         }
 
-        public record Action(String type, String text, Map<String, Object> extra) {}
+        public record Action(String type, String text, String summon, Integer value, String command, Long time, String effect, Integer duration, Integer amplifier) {}
 
         public record Drops(List<Drop> global) {}
 
@@ -533,9 +605,23 @@ public final class RaidConfigLoader {
             case "player_join", "player_join_any", "on_player_join", "player has join" -> RaidStartSettings.Trigger.PLAYER_JOIN_ANY;
             case "player has join in singleplay world", "player_join_singleplayer", "singleplayer_join" -> RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER;
             case "night", "night_fall", "on_night" -> RaidStartSettings.Trigger.NIGHT_FALL;
+            case "on_kill" -> RaidStartSettings.Trigger.ON_KILL;
+            case "on_item_pickup", "on_pickup", "item_pickup" -> RaidStartSettings.Trigger.ON_ITEM_PICKUP;
+            case "on_trade", "trade" -> RaidStartSettings.Trigger.ON_TRADE;
+            case "on_structure_visit", "visit_structure" -> RaidStartSettings.Trigger.ON_STRUCTURE_VISIT;
+            case "on_dimension_change" -> RaidStartSettings.Trigger.ON_DIMENSION_CHANGE;
+            case "on_respawn" -> RaidStartSettings.Trigger.ON_RESPAWN;
+            case "on_enter_biome" -> RaidStartSettings.Trigger.ON_ENTER_BIOME;
+            case "on_day" -> RaidStartSettings.Trigger.ON_DAY;
+            case "on_sunset" -> RaidStartSettings.Trigger.ON_SUNSET;
+            case "on_midnight" -> RaidStartSettings.Trigger.ON_MIDNIGHT;
             default -> RaidStartSettings.Trigger.MANUAL;
         };
-        return new RaidStartSettings(trigger, start.cooldown_ticks());
+        ResourceLocation entity = ResourceLocation.tryParse(start.entity());
+        ResourceLocation item = ResourceLocation.tryParse(start.item());
+        ResourceLocation structure = ResourceLocation.tryParse(start.structure());
+        ResourceLocation biome = ResourceLocation.tryParse(start.biome());
+        return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, start.value());
     }
 
     private static MobTraits parseMobTuning(JsonElement traits) {
@@ -663,4 +749,29 @@ public final class RaidConfigLoader {
         }
         return parsed;
     }
+
+    public record LoadReport(int found, int loaded, List<String> errors) {
+        public static LoadReport failed(String message, Exception e) {
+            return new LoadReport(0, 0, List.of(message + ": " + e.getClass().getSimpleName() + " - " + e.getMessage()));
+        }
+
+        public boolean hasErrors() {
+            return !errors.isEmpty();
+        }
+    }
+
+    private record LoadIssue(boolean success, String message) {
+        static LoadIssue ok(Path file) {
+            return new LoadIssue(true, "OK: " + file.getFileName());
+        }
+
+        static LoadIssue failed(Path file, String message) {
+            return new LoadIssue(false, file.getFileName() + " -> " + message);
+        }
+
+        static LoadIssue failed(Path file, String message, Exception e) {
+            return new LoadIssue(false, file.getFileName() + " -> " + message + " (" + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
+        }
+    }
+
 }
