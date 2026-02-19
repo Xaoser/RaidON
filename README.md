@@ -128,9 +128,12 @@ Raidpoints
   ```"start": { "event": "on_sunset", "cooldown_ticks": 24000 }```
 - `on_midnight` - start at midnight
   ```"start": { "event": "on_midnight", "cooldown_ticks": 24000 }```
+- `on_structure_visit` - start when player visit structure
+  ```"start": { "event": "on_structure_visit", "structure": "minecraft:village_plains"}```
   
 `addition start`:
 - `event` or `type` — name of trigger
+- `value` - how many triggers should be triggered
 - `cooldown_ticks` — Delay between automatic raid launches
 
 Example:
@@ -174,17 +177,42 @@ It works for global and local drops
 ----------------------------------------------------
 End triggers:
 - `broadcast` — send broadcast message to players
+  ```{ "type": "broadcast", "text": "Рейд завершён!" }```
 - `summon` - summon mob on end
-- `on_kill` - "start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }
+  ```{ "type": "summon", "summon": "minecraft:zombie", "value": 10 }```
+- `command` - execute any server command (`"/time set day"` and `"time set day"` supported)
+  ```{ "type": "command", "command": "say Рейд завершён" }```
+- `set_time` - setting time in world
+  ```{ "type": "set_time", "time": 18000 }```
+- `lightning` - lightning strike to target
+  ```{ "type": "lightning" }```
+- `effect` - applying effect to players
+  ```{ "type": "effect", "effect": "minecraft:regeneration", "duration": 200, "amplifier": 1 }```
+- `title` - titling a text
+  ```{ "type": "title", "text": "It's Cookie time!" }```
 
 Example
 ```json
 "on_raid_end": [
   { "type": "broadcast", "text": "Raid is over!" },
-  { "type": "summon", "summon": "minecraft:zombie", "value": "10"}
+  { "type": "summon", "summon": "minecraft:zombie", "value": 10 },
+  { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 }
 ]
 ```
+- `on_raid_end` is supports multiple end actions.
 
+
+Lightning examples
+```json
+{ "type": "lightning" }
+{ "type": "lightning", "value": 3 }
+{ "type": "lightning", "target": "entity", "entity": "players_in_raid" }
+{ "type": "lightning", "target": "entity", "entity": "mobs", "radius": 80, "value": 2 }
+{ "type": "lightning", "x": 100, "y": 70, "z": -35, "value": 4 }
+```
+
+- `value` for lightning = strikes count (for entity target it is strikes per entity).
+  
 ## API
 ------------------------------------
 Новые публичные API для других модов:
