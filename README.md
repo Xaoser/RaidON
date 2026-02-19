@@ -19,7 +19,7 @@ Do you want to make a zombie apocalypse or just make some kind of event?, then t
 ## Example raid config:
 ```json
 {
-  "id": "raidon:zombie_raid",
+  "id": "raidon:example_raid",
   "difficulty": 2,
   "start": { "event": "player has join in singleplay world" },
   "points": {
@@ -39,7 +39,7 @@ Do you want to make a zombie apocalypse or just make some kind of event?, then t
   "waves": [
     {"mobs": [
       {"type": "minecraft:chicken",
-        "count": 300,
+        "count": 60,
         "ai": "aggressive",
         "damage": 3.0,
         "targets": {
