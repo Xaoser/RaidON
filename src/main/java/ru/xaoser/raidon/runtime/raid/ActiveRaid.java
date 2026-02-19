@@ -42,6 +42,7 @@ class ActiveRaid implements RaidRuntime {
     private final BlockPos center;
     private final BlockPos spawnPoint;
     private final BlockPos raidTargetPoint;
+    private final int mobWanderRadius;
     private final RaidSpawnSettings spawnSettings;
     private final RaidGuiSettings guiSettings;
     private final BasicRaidContext context;
@@ -58,12 +59,13 @@ class ActiveRaid implements RaidRuntime {
     private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
     private SpawnResult lastSpawnResult = SpawnResult.empty();
 
-    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, RaidSpawnSettings spawnSettings, RaidGuiSettings guiSettings) {
+    ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, int mobWanderRadius, RaidSpawnSettings spawnSettings, RaidGuiSettings guiSettings) {
         this.raid = raid;
         this.level = level;
         this.center = center.immutable();
         this.spawnPoint = spawnPoint.immutable();
         this.raidTargetPoint = raidTargetPoint.immutable();
+        this.mobWanderRadius = Math.max(4, mobWanderRadius);
         this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
         this.guiSettings = guiSettings == null ? RaidGuiSettings.DEFAULT : guiSettings;
         this.context = new BasicRaidContext(level, this.center, raid.difficulty());
@@ -282,7 +284,7 @@ class ActiveRaid implements RaidRuntime {
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 mob.addTag(MobAiHelper.RAID_MOB_TAG);
-                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint);
+                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint, mobWanderRadius);
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
