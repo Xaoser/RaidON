@@ -36,6 +36,8 @@ class ActiveRaid implements RaidRuntime {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int MAX_RESPAWN_ATTEMPTS = 3;
     private static final int MIN_PLAYER_DISTANCE = 12;
+    private static final int SPAWN_BATCH_PER_TICK = 8;
+    private static final int LAND_SEARCH_RADIUS = 8;
 
     private final Raid raid;
     private final ServerLevel level;
@@ -189,34 +191,54 @@ class ActiveRaid implements RaidRuntime {
             int radius = minRadius + random.nextInt(Math.max(1, maxRadius - minRadius + 1));
             int dx = (int) Math.round(Math.cos(angle) * radius);
             int dz = (int) Math.round(Math.sin(angle) * radius);
-            BlockPos candidate = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint.offset(dx, 0, dz));
-
-            if (spawnSettings.requireGround()) {
-                BlockState stateBelow = level.getBlockState(candidate.below());
-                if (!stateBelow.isSolidRender(level, candidate.below())) {
-                    continue;
-                }
-            }
-
-            if (spawnSettings.avoidWater() && level.getFluidState(candidate).isSource()) {
+            BlockPos rawCandidate = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint.offset(dx, 0, dz));
+            BlockPos candidate = adaptSpawnToGround(rawCandidate);
+            if (candidate == null || isTooCloseToPlayer(candidate)) {
                 continue;
             }
-
-            if (isTooCloseToPlayer(candidate)) {
-                continue;
-            }
-
             return candidate;
         }
 
-        BlockPos fallback = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint);
-        if (!isTooCloseToPlayer(fallback)) {
+        BlockPos fallback = adaptSpawnToGround(level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint));
+        if (fallback != null && !isTooCloseToPlayer(fallback)) {
             return fallback;
         }
 
         return null;
     }
 
+
+    private BlockPos adaptSpawnToGround(BlockPos start) {
+        if (start == null) {
+            return null;
+        }
+        if (isValidGroundSpawn(start)) {
+            return start;
+        }
+
+        for (int r = 1; r <= LAND_SEARCH_RADIUS; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    BlockPos probe = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, start.offset(dx, 0, dz));
+                    if (isValidGroundSpawn(probe)) {
+                        return probe;
+                    }
+                }
+            }
+        }
+
+        return start.above(3);
+    }
+
+    private boolean isValidGroundSpawn(BlockPos pos) {
+        if (spawnSettings.requireGround()) {
+            BlockState stateBelow = level.getBlockState(pos.below());
+            if (!stateBelow.isSolidRender(level, pos.below())) {
+                return false;
+            }
+        }
+        return !spawnSettings.avoidWater() || !level.getFluidState(pos).isSource();
+    }
     private void preparePendingWave(RaidWave wave) {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
@@ -265,9 +287,10 @@ class ActiveRaid implements RaidRuntime {
             return new SpawnAttemptResult(spawned, created, spawnedCount, posNull, addFailed);
         }
 
+        int quota = SPAWN_BATCH_PER_TICK;
         for (PendingSpawn entry : pending) {
             int remaining = entry.remaining();
-            for (int i = 0; i < remaining; i++) {
+            for (int i = 0; i < remaining && quota > 0; i++) {
                 BlockPos pos = findSpawnPos(random, wave.spawnRadius());
                 if (pos == null) {
                     posNull++;
@@ -289,9 +312,12 @@ class ActiveRaid implements RaidRuntime {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
                     entry.decrement();
-                    if (!entry.drops().isEmpty()) {
-                        mobDrops.put(mob.getUUID(), entry.drops());
+                    List<DropEntry> mergedDrops = new ArrayList<>(raid.globalDrops());
+                    mergedDrops.addAll(entry.drops());
+                    if (!mergedDrops.isEmpty()) {
+                        mobDrops.put(mob.getUUID(), List.copyOf(mergedDrops));
                     }
+                    quota--;
                     if (!entry.tuning().isDefault()) {
                         mobTunings.put(mob.getUUID(), entry.tuning());
                     }
@@ -432,9 +458,6 @@ class ActiveRaid implements RaidRuntime {
         }
         completed = true;
         raid.endAction().run(context);
-        if (!raid.globalDrops().isEmpty()) {
-            dropLoot(raid.globalDrops(), center, level.getRandom());
-        }
     }
 
     private void dropLoot(List<DropEntry> drops, BlockPos pos, RandomSource random) {
