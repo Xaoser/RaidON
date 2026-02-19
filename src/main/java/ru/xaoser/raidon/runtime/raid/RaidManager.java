@@ -54,9 +54,9 @@ public final class RaidManager {
 
         RaidPointSettings.ResolvedPoints points = loaded.pointSettings().resolve(center);
         ActiveRaid active = new ActiveRaid(loaded.raid(), level, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(),
-                loaded.spawnSettings(), loaded.guiSettings());
+                points.mobWanderRadius(), loaded.spawnSettings(), loaded.guiSettings());
         ACTIVE.put(id, active);
-        LOGGER.info("Started raid {} center={} spawn={} target={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint());
+        LOGGER.info("Started raid {} center={} spawn={} target={} wanderRadius={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(), points.mobWanderRadius());
         sendProgress(active, false);
         return StartResult.STARTED;
     }
