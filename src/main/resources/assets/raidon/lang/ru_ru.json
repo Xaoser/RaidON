@@ -1,4 +1,15 @@
 {
   "raidon.hud.wave": "Волна %s/%s",
-  "raidon.hud.mobs": "Мобы: %s/%s"
+  "raidon.hud.mobs": "Мобы: %s/%s",
+  "raidon.command.start.started": "Рейд %s запущен в %s",
+  "raidon.command.start.already_active": "Рейд %s уже активен.",
+  "raidon.command.start.not_found": "Рейд %s не найден. Проверьте конфиг в config/raidon/raids/.",
+  "raidon.command.reload.failed": "Рейды перезагружены с ошибками: %s/%s",
+  "raidon.command.reload.error_entry": " - %s",
+  "raidon.command.reload.success": "Рейды перезагружены успешно: %s/%s",
+  "raidon.command.active.none": "Активных рейдов нет.",
+  "raidon.command.active.header": "Активные рейды:",
+  "raidon.command.active.entry": "- %s @ %s | волна %s/%s | мобы %s/%s",
+  "raidon.command.stop.stopped": "Рейд %s остановлен.",
+  "raidon.command.stop.not_found": "Рейд %s не найден среди активных."
 }

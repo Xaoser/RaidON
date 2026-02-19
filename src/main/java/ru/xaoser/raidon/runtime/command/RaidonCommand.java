@@ -62,15 +62,15 @@ public final class RaidonCommand {
 
         switch (result) {
             case STARTED -> {
-                source.sendSuccess(() -> Component.literal("Рейд " + id + " запущен в " + center), true);
+                source.sendSuccess(() -> Component.translatable("raidon.command.start.started", id, center), true);
                 return 1;
             }
             case ALREADY_ACTIVE -> {
-                source.sendFailure(Component.literal("Рейд " + id + " уже активен."));
+                source.sendFailure(Component.translatable("raidon.command.start.already_active", id));
                 return 0;
             }
             case NOT_FOUND -> {
-                source.sendFailure(Component.literal("Рейд " + id + " не найден. Проверьте конфиг в config/raidon/raids/."));
+                source.sendFailure(Component.translatable("raidon.command.start.not_found", id));
                 return 0;
             }
             default -> {
@@ -82,31 +82,34 @@ public final class RaidonCommand {
     private static int reload(CommandSourceStack source) {
         RaidConfigLoader.LoadReport report = RaidConfigLoader.load(source.getServer(), ru.xaoser.raidon.Raidon.LOGGER);
         if (report.hasErrors()) {
-            source.sendFailure(Component.literal("Рейды перезагружены с ошибками: " + report.loaded() + "/" + report.found()));
+            source.sendFailure(Component.translatable("raidon.command.reload.failed", report.loaded(), report.found()));
             for (String error : report.errors()) {
-                source.sendFailure(Component.literal(" - " + error));
+                source.sendFailure(Component.translatable("raidon.command.reload.error_entry", error));
             }
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("Рейды перезагружены успешно: " + report.loaded() + "/" + report.found()), true);
+        source.sendSuccess(() -> Component.translatable("raidon.command.reload.success", report.loaded(), report.found()), true);
         return 1;
     }
 
     private static int showActive(CommandSourceStack source) {
         var active = RaidManager.activeStatuses();
         if (active.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("Активных рейдов нет."), false);
+            source.sendSuccess(() -> Component.translatable("raidon.command.active.none"), false);
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal("Активные рейды:"), false);
+        source.sendSuccess(() -> Component.translatable("raidon.command.active.header"), false);
         for (RaidManager.ActiveRaidStatus status : active) {
             int waveDisplay = status.waveIndex() + 1;
-            source.sendSuccess(() -> Component.literal(
-                    "- " + status.id() +
-                            " @ " + status.center() +
-                            " | волна " + waveDisplay + "/" + status.totalWaves() +
-                            " | мобы " + status.aliveInWave() + "/" + status.totalInWave()
+            source.sendSuccess(() -> Component.translatable(
+                    "raidon.command.active.entry",
+                    status.id(),
+                    status.center(),
+                    waveDisplay,
+                    status.totalWaves(),
+                    status.aliveInWave(),
+                    status.totalInWave()
             ), false);
         }
         return active.size();
@@ -115,10 +118,10 @@ public final class RaidonCommand {
     private static int stopRaid(CommandSourceStack source, ResourceLocation id) {
         boolean stopped = RaidManager.stopRaid(id);
         if (stopped) {
-            source.sendSuccess(() -> Component.literal("Рейд " + id + " остановлен."), true);
+            source.sendSuccess(() -> Component.translatable("raidon.command.stop.stopped", id), true);
             return 1;
         } else {
-            source.sendFailure(Component.literal("Рейд " + id + " не найден среди активных."));
+            source.sendFailure(Component.translatable("raidon.command.stop.not_found", id));
             return 0;
         }
     }

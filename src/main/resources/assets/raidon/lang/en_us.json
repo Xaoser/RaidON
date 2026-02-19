@@ -1,4 +1,15 @@
 {
   "raidon.hud.wave": "Wave %s/%s",
-  "raidon.hud.mobs": "Mobs left: %s/%s"
+  "raidon.hud.mobs": "Mobs left: %s/%s",
+  "raidon.command.start.started": "Raid %s started at %s",
+  "raidon.command.start.already_active": "Raid %s is already active.",
+  "raidon.command.start.not_found": "Raid %s not found. Check config in config/raidon/raids/.",
+  "raidon.command.reload.failed": "Raids reloaded with errors: %s/%s",
+  "raidon.command.reload.error_entry": " - %s",
+  "raidon.command.reload.success": "Raids reloaded successfully: %s/%s",
+  "raidon.command.active.none": "No active raids.",
+  "raidon.command.active.header": "Active raids:",
+  "raidon.command.active.entry": "- %s @ %s | wave %s/%s | mobs %s/%s",
+  "raidon.command.stop.stopped": "Raid %s stopped.",
+  "raidon.command.stop.not_found": "Raid %s not found among active raids."
 }

@@ -86,7 +86,7 @@ public final class RaidConfigLoader {
                   ],
                     "complete": {"type": "all_dead" },
                     "on_end": [
-                      { "type": "broadcast", "text": "Волна 1 отбита." }
+                      { "type": "broadcast", "text": "Wave 1 cleared." }
                     ]
                   },
                   {"mobs": [
@@ -105,7 +105,7 @@ public final class RaidConfigLoader {
                   }
                 ],
                 "on_raid_end": [
-                  { "type": "broadcast", "text": "Рейд завершён!" },
+                  { "type": "broadcast", "text": "Raid completed!" },
                   { "type": "summon", "summon": "minecraft:zombie", "value": 10 }
                 ]
               }
@@ -122,7 +122,7 @@ public final class RaidConfigLoader {
             Files.createDirectories(baseDir);
         } catch (IOException e) {
             logger.error("[Raidon] Failed to create raid config directory {}", baseDir, e);
-            return LoadReport.failed("Не удалось создать директорию конфигов: " + baseDir, e);
+            return LoadReport.failed("Failed to create config directory: " + baseDir, e);
         }
 
         ensureDefaultConfig(baseDir, logger);
@@ -151,7 +151,7 @@ public final class RaidConfigLoader {
             }
         } catch (IOException e) {
             logger.error("[Raidon] Failed to list raid configs in {}", baseDir, e);
-            errors.add("Ошибка чтения директории конфигов " + baseDir + ": " + e.getMessage());
+            errors.add("Error reading config directory " + baseDir + ": " + e.getMessage());
         }
 
         logger.info("[Raidon] Raid load done. loaded={}/{}. Registered now: {}",
@@ -188,13 +188,13 @@ public final class RaidConfigLoader {
             RaidFile model = GSON.fromJson(reader, RaidFile.class);
             if (model == null) {
                 logger.warn("[Raidon] Skipping empty raid file {}", file.getFileName());
-                return LoadIssue.failed(file, "Пустой или невалидный JSON объект");
+                return LoadIssue.failed(file, "Empty or invalid JSON object");
             }
 
             ResourceLocation id = ResourceLocation.tryParse(model.id());
             if (id == null) {
                 logger.warn("[Raidon] Invalid raid id in {}: {}", file.getFileName(), model.id());
-                return LoadIssue.failed(file, "Некорректный raid id: " + model.id());
+                return LoadIssue.failed(file, "Invalid raid id: " + model.id());
             }
 
             // Spawn settings
@@ -216,7 +216,7 @@ public final class RaidConfigLoader {
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
                 logger.warn("[Raidon] Raid {} has no waves, skipping ({})", id, file.getFileName());
-                return LoadIssue.failed(file, "Отсутствуют волны");
+                return LoadIssue.failed(file, "No waves defined");
             }
 
             List<DropEntry> globalDrops = parseDrops(model.drops() == null ? null : model.drops().global(), logger, file);
@@ -291,7 +291,7 @@ public final class RaidConfigLoader {
 
             if (!hasValidWave) {
                 logger.warn("[Raidon] Raid {} has no valid waves, skipping ({})", id, file.getFileName());
-                return LoadIssue.failed(file, "Нет валидных волн после парсинга");
+                return LoadIssue.failed(file, "No valid waves after parsing");
             }
 
             Raid raid = builder.build();
@@ -302,10 +302,10 @@ public final class RaidConfigLoader {
 
         } catch (IOException | JsonParseException | IllegalArgumentException e) {
             logger.error("[Raidon] Failed to parse raid file {}", file.getFileName(), e);
-            return LoadIssue.failed(file, "Ошибка парсинга: " + e.getMessage(), e);
+            return LoadIssue.failed(file, "Parsing error: " + e.getMessage(), e);
         } catch (Exception e) {
             logger.error("[Raidon] Unexpected error while loading {}", file.getFileName(), e);
-            return LoadIssue.failed(file, "Неожиданная ошибка: " + e.getMessage(), e);
+            return LoadIssue.failed(file, "Unexpected error: " + e.getMessage(), e);
         }
     }
 
