@@ -51,13 +51,22 @@ RaidON Triggers & Actions Examples
 { "type": "summon", "summon": "minecraft:zombie", "value": 10 }
 
 3) Выполнить команду:
-{ "type": "command", "command": "say Рейд завершён" }
+{ "type": "command", "command": "/say Рейд завершён" }
 
 4) Изменить время:
 { "type": "set_time", "time": 18000 }
 
 5) Удар молнией в центре:
 { "type": "lightning" }
+
+5.1) Молния по сущностям в зоне рейда:
+{ "type": "lightning", "target": "entity", "entity": "players_in_raid" }
+
+5.2) Молния по множеству мобов рядом (по 2 удара на каждого):
+{ "type": "lightning", "target": "entity", "entity": "mobs", "radius": 80, "value": 2 }
+
+5.3) Молния по координатам:
+{ "type": "lightning", "x": 120, "y": 70, "z": -40, "value": 3 }
 
 6) Эффект игрокам:
 { "type": "effect", "effect": "minecraft:regeneration", "duration": 200, "amplifier": 1 }

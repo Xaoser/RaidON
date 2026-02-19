@@ -339,20 +339,18 @@ public final class RaidConfigLoader {
                     }
                     case "command" -> {
                         if (action.command() == null || action.command().isBlank()) break;
-                        CommandSourceStack source = ctx.level().getServer().createCommandSourceStack().withPermission(2);
-                        ctx.level().getServer().getCommands().performPrefixedCommand(source, action.command());
+                        String command = action.command().trim();
+                        if (command.startsWith("/")) {
+                            command = command.substring(1).trim();
+                        }
+                        if (command.isBlank()) break;
+                        CommandSourceStack source = ctx.level().getServer().createCommandSourceStack().withPermission(4);
+                        ctx.level().getServer().getCommands().performPrefixedCommand(source, command);
                     }
                     case "set_time" -> {
                         if (action.time() != null) ctx.level().setDayTime(action.time());
                     }
-                    case "lightning" -> {
-                        var bolt = EntityType.LIGHTNING_BOLT.create(ctx.level());
-                        if (bolt != null) {
-                            BlockPos pos = ctx.center();
-                            bolt.moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
-                            ctx.level().addFreshEntity(bolt);
-                        }
-                    }
+                    case "lightning" -> triggerLightning(ctx, action);
                     case "effect" -> {
                         if (action.effect() == null) break;
                         ResourceLocation effectId = ResourceLocation.tryParse(action.effect());
@@ -377,6 +375,68 @@ public final class RaidConfigLoader {
                 }
             }
         };
+    }
+
+    private static void triggerLightning(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
+        int strikes = Math.max(1, action.value() == null ? 1 : action.value());
+
+        if (action.target() != null && action.target().equalsIgnoreCase("entity")) {
+            List<Entity> targets = collectLightningEntities(ctx, action);
+            for (Entity entity : targets) {
+                for (int i = 0; i < strikes; i++) {
+                    spawnLightning(ctx.level(), entity.blockPosition());
+                }
+            }
+            if (!targets.isEmpty()) {
+                return;
+            }
+        }
+
+        BlockPos pos = resolveLightningPosition(ctx, action);
+        for (int i = 0; i < strikes; i++) {
+            spawnLightning(ctx.level(), pos);
+        }
+    }
+
+    private static List<Entity> collectLightningEntities(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
+        String selector = action.entity() == null ? "players_in_raid" : action.entity().toLowerCase();
+        int radius = Math.max(1, action.radius() == null ? 64 : action.radius());
+
+        return switch (selector) {
+            case "players", "all_players", "players_in_world" -> new ArrayList<>(ctx.level().players());
+            case "players_in_raid", "players_in_zone" -> new ArrayList<>(ctx.playersInRaidZone());
+            case "nearest_player" -> {
+                var nearest = ctx.level().getNearestPlayer(ctx.center().getX() + 0.5D, ctx.center().getY() + 0.5D, ctx.center().getZ() + 0.5D, radius, false);
+                if (nearest == null) {
+                    yield List.of();
+                }
+                yield List.of(nearest);
+            }
+            case "mobs", "all_mobs" -> ctx.level().getEntitiesOfClass(Mob.class, new net.minecraft.world.phys.AABB(ctx.center()).inflate(radius)).stream().map(e -> (Entity) e).toList();
+            default -> List.of();
+        };
+    }
+
+    private static BlockPos resolveLightningPosition(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
+        if (action.x() != null && action.y() != null && action.z() != null) {
+            return new BlockPos(action.x(), action.y(), action.z());
+        }
+
+        String blockTarget = action.block() == null ? "center" : action.block().toLowerCase();
+        return switch (blockTarget) {
+            case "raidpoint", "target", "raid_target" -> ctx.center();
+            case "above_center" -> ctx.center().above();
+            default -> ctx.center();
+        };
+    }
+
+    private static void spawnLightning(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        var bolt = EntityType.LIGHTNING_BOLT.create(level);
+        if (bolt == null) {
+            return;
+        }
+        bolt.moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
+        level.addFreshEntity(bolt);
     }
 
     @SuppressWarnings("unchecked")
@@ -465,7 +525,7 @@ public final class RaidConfigLoader {
             }
         }
 
-        public record Action(String type, String text, String summon, Integer value, String command, Long time, String effect, Integer duration, Integer amplifier) {}
+        public record Action(String type, String text, String summon, Integer value, String command, Long time, String effect, Integer duration, Integer amplifier, String target, String entity, String block, Integer x, Integer y, Integer z, Integer radius) {}
 
         public record Drops(List<Drop> global) {}
 

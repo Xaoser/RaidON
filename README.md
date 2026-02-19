@@ -175,7 +175,9 @@ It works for global and local drops
 End triggers:
 - `broadcast` — send broadcast message to players
 - `summon` - summon mob on end
-- `on_kill` - "start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }
+- `command` - execute any server command (`"/time set day"` and `"time set day"` both supported)
+- `lightning` - strike lightning into entities, block point, or explicit coordinates
+- `on_kill` - `"start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }`
 
 Example
 ```json
@@ -184,6 +186,18 @@ Example
   { "type": "summon", "summon": "minecraft:zombie", "value": "10"}
 ]
 ```
+
+Lightning examples
+```json
+{ "type": "lightning" }
+{ "type": "lightning", "value": 3 }
+{ "type": "lightning", "target": "entity", "entity": "players_in_raid" }
+{ "type": "lightning", "target": "entity", "entity": "mobs", "radius": 80, "value": 2 }
+{ "type": "lightning", "x": 100, "y": 70, "z": -35, "value": 4 }
+```
+
+- `value` for lightning = strikes count (for entity target it is strikes per entity).
+- Multiplayer safety: raid configs are loaded and executed on server side only, rewards/actions are server-authoritative.
 
 ## API
 ------------------------------------
