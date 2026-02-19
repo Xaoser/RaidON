@@ -2,6 +2,7 @@ package ru.xaoser.raidon.runtime.raid.ai;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -27,29 +28,28 @@ public final class MobAiHelper {
 
     private MobAiHelper() {}
 
-    public static void applyBehavior(Mob mob, SpawnBehavior behavior, MobTargeting targeting, BlockPos raidTargetPoint) {
+    public static void applyBehavior(Mob mob, SpawnBehavior behavior, MobTargeting targeting, BlockPos raidTargetPoint, int mobWanderRadius) {
         if (!(mob instanceof PathfinderMob pathfinder)) {
             return;
         }
 
         MobTargeting cfg = targeting == null ? MobTargeting.defaults() : targeting;
 
+        if (raidTargetPoint != null) {
+            pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
+        }
+
         if (behavior == SpawnBehavior.HOSTILE) {
-            setupHostile(pathfinder, cfg, raidTargetPoint);
+            setupHostile(pathfinder, cfg);
         } else {
-            setupNeutral(pathfinder, cfg, raidTargetPoint);
+            setupNeutral(pathfinder, cfg);
         }
     }
 
-    private static void setupHostile(PathfinderMob mob, MobTargeting targeting, BlockPos raidTargetPoint) {
-        if (raidTargetPoint != null) {
-            mob.restrictTo(raidTargetPoint, 96);
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, RaidMoveToPointGoal.class,
-                    () -> new RaidMoveToPointGoal(mob, 1.0D, 30.0D, 60));
-        }
-
+    private static void setupHostile(PathfinderMob mob, MobTargeting targeting) {
         applyFollowRange(mob, targeting.radius());
         ensureBaseDamage(mob);
+
         if (!hasAttackDamageAttribute(mob)) {
             addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 6, MeleeAttackGoal.class,
                     () -> new RaidMeleeAttackGoal(mob, 1.2D, false));
@@ -58,7 +58,7 @@ public final class MobAiHelper {
         Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
                 () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
 
         if (!targeting.attackTypes().isEmpty() || targeting.attackAll()) {
@@ -67,6 +67,17 @@ public final class MobAiHelper {
         } else {
             mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
         }
+    }
+
+    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting) {
+        ensureBaseDamage(mob);
+        Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
+
+        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
+                () -> new RaidMeleeAttackGoal(mob, 1.15D, false));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
+                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
     }
 
     private static Predicate<LivingEntity> createPreferredTargetFilter(MobTargeting targeting) {
@@ -139,24 +150,6 @@ public final class MobAiHelper {
         }
     }
 
-    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BlockPos raidTargetPoint) {
-        if (raidTargetPoint != null) {
-            mob.restrictTo(raidTargetPoint, 16);
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 7, RaidMoveToPointGoal.class,
-                    () -> new RaidMoveToPointGoal(mob, 1.0D, 12.0D, 80));
-        }
-
-        ensureBaseDamage(mob);
-        Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
-
-        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.15D, false));
-        addGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
-        mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
-    }
-
-
     private static boolean hasAttackDamageAttribute(PathfinderMob mob) {
         return mob.getAttribute(Attributes.ATTACK_DAMAGE) != null;
     }
@@ -195,65 +188,14 @@ public final class MobAiHelper {
         }
     }
 
-    private static void addGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
-                                        Class<? extends Goal> goalClass,
-                                        java.util.function.Supplier<NearestAttackableTargetGoal<?>> supplier) {
+    private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
+                                              Class<? extends Goal> goalClass,
+                                              java.util.function.Supplier<NearestAttackableTargetGoal<?>> supplier) {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
         if (!exists) {
             mob.targetSelector.addGoal(priority, supplier.get());
         }
     }
-
-
-    private static final class RaidMoveToPointGoal extends Goal {
-        private final PathfinderMob mob;
-        private final double speedModifier;
-        private final double minDistanceToCenterSqr;
-        private final int cooldownTicks;
-        private int nextTryTick;
-
-        private RaidMoveToPointGoal(PathfinderMob mob, double speedModifier, double minDistanceToCenter, int cooldownTicks) {
-            this.mob = mob;
-            this.speedModifier = speedModifier;
-            this.minDistanceToCenterSqr = minDistanceToCenter * minDistanceToCenter;
-            this.cooldownTicks = Math.max(20, cooldownTicks);
-            this.nextTryTick = 0;
-        }
-
-        @Override
-        public boolean canUse() {
-            if (!mob.hasRestriction()) {
-                return false;
-            }
-            if (mob.getTarget() != null) {
-                return false;
-            }
-            if (mob.tickCount < nextTryTick) {
-                return false;
-            }
-            return mob.distanceToSqr(mob.getRestrictCenter().getX() + 0.5D,
-                    mob.getRestrictCenter().getY() + 0.5D,
-                    mob.getRestrictCenter().getZ() + 0.5D) > minDistanceToCenterSqr;
-        }
-
-        @Override
-        public void start() {
-            nextTryTick = mob.tickCount + cooldownTicks;
-            BlockPos center = mob.getRestrictCenter();
-            mob.getNavigation().moveTo(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D, speedModifier);
-        }
-
-        @Override
-        public boolean canContinueToUse() {
-            return mob.getTarget() == null && !mob.getNavigation().isDone();
-        }
-
-        @Override
-        public void stop() {
-            mob.getNavigation().stop();
-        }
-    }
-
 
     private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
         private final PathfinderMob mob;

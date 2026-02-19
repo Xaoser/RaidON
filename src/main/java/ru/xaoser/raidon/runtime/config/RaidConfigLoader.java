@@ -282,7 +282,7 @@ public final class RaidConfigLoader {
             public record Condition(String type, int min, int max, int value) {}
         }
 
-        public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint) {}
+        public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint, Integer mob_wander_radius) {}
 
         public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
 
@@ -316,7 +316,8 @@ public final class RaidConfigLoader {
         return new RaidPointSettings(
                 parsePoint(points.mainpoint(), logger, file, "points.mainpoint"),
                 parsePoint(points.raidspawnpoint(), logger, file, "points.raidspawnpoint"),
-                parsePoint(points.raidpoint(), logger, file, "points.raidpoint")
+                parsePoint(points.raidpoint(), logger, file, "points.raidpoint"),
+                points.mob_wander_radius()
         );
     }
 
