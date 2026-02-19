@@ -21,7 +21,16 @@ Do you want to make a zombie apocalypse or just make some kind of event?, then t
 {
   "id": "raidon:example_raid",
   "difficulty": 2,
-  "start": { "event": "player has join in singleplay world" },
+  "start": {
+  "event": "on_kill",
+  "entity": "minecraft:zombie",
+  "conditions": [
+    { "type": "min_players", "value": 2 },
+    { "type": "in_biome", "biome": "minecraft:plains" },
+    { "type": "in_dimension", "dimension": "minecraft:overworld" },
+    { "type": "y_between", "min": 60, "max": 90 }
+  ]
+}
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
