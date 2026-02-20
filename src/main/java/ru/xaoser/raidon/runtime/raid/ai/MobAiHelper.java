@@ -2,7 +2,6 @@ package ru.xaoser.raidon.runtime.raid.ai;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -62,8 +61,8 @@ public final class MobAiHelper {
         Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        addGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), -1, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
 
         if (!targeting.attackTypes().isEmpty() || targeting.attackAll()) {
             mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, preferredFilter));
@@ -80,8 +79,8 @@ public final class MobAiHelper {
 
         addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
                 () -> new RaidMeleeAttackGoal(mob, 1.15D, true));
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        addGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), -1, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
         mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
     }
 
@@ -191,14 +190,6 @@ public final class MobAiHelper {
         }
     }
 
-    private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
-                                              Class<? extends Goal> goalClass,
-                                              java.util.function.Supplier<NearestAttackableTargetGoal<?>> supplier) {
-        boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
-        if (!exists) {
-            mob.targetSelector.addGoal(priority, supplier.get());
-        }
-    }
 
     private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
         private final PathfinderMob mob;
@@ -219,6 +210,12 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+    }
+
+    private static final class RaidNearestPlayerTargetGoal extends NearestAttackableTargetGoal<Player> {
+        private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
+            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer);
         }
     }
 }
