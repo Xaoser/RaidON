@@ -2,6 +2,8 @@ package ru.xaoser.raidon.runtime.raid.ai;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -13,7 +15,6 @@ import net.minecraft.world.entity.ai.goal.FollowParentGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.PanicGoal;
-import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.TemptGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
@@ -32,6 +33,7 @@ public final class MobAiHelper {
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
     private static final double RETURN_TO_ZONE_SPEED = 1.25D;
+    private static final double PATROL_SPEED = 1.0D;
 
     private MobAiHelper() {}
 
@@ -47,6 +49,8 @@ public final class MobAiHelper {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
             addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidReturnToRestrictionGoal.class,
                     () -> new RaidReturnToRestrictionGoal(pathfinder));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 6, RaidPatrolWithinRestrictionGoal.class,
+                    () -> new RaidPatrolWithinRestrictionGoal(pathfinder));
         }
 
         if (behavior == SpawnBehavior.HOSTILE) {
@@ -147,8 +151,7 @@ public final class MobAiHelper {
             return inner instanceof TemptGoal
                     || inner instanceof PanicGoal
                     || inner instanceof BreedGoal
-                    || inner instanceof FollowParentGoal
-                    || inner instanceof RandomStrollGoal;
+                    || inner instanceof FollowParentGoal;
         });
     }
 
@@ -256,17 +259,16 @@ public final class MobAiHelper {
 
         @Override
         public boolean canUse() {
-            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition());
+            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
         }
 
         @Override
         public boolean canContinueToUse() {
-            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition());
+            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
         }
 
         @Override
         public void start() {
-            mob.setTarget(null);
             BlockPos restrictCenter = mob.getRestrictCenter();
             mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D, RETURN_TO_ZONE_SPEED);
         }
@@ -279,9 +281,60 @@ public final class MobAiHelper {
             }
         }
 
+        private boolean hasActiveTarget() {
+            LivingEntity target = mob.getTarget();
+            return target != null && target.isAlive();
+        }
+    }
+
+    private static final class RaidPatrolWithinRestrictionGoal extends Goal {
+        private final PathfinderMob mob;
+        private int recalcTicks;
+
+        private RaidPatrolWithinRestrictionGoal(PathfinderMob mob) {
+            this.mob = mob;
+            this.setFlags(EnumSet.of(Flag.MOVE));
+        }
+
         @Override
-        public void stop() {
-            mob.getNavigation().stop();
+        public boolean canUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public void start() {
+            recalcTicks = 0;
+            moveToNextPoint();
+        }
+
+        @Override
+        public void tick() {
+            if (--recalcTicks <= 0 || mob.getNavigation().isDone()) {
+                moveToNextPoint();
+            }
+        }
+
+        private void moveToNextPoint() {
+            BlockPos center = mob.getRestrictCenter();
+            int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
+            for (int i = 0; i < 8; i++) {
+                int dx = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                int dz = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                BlockPos candidate = center.offset(dx, 0, dz);
+                if (!mob.isWithinRestriction(candidate)) {
+                    continue;
+                }
+                if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, center.getY(), candidate.getZ() + 0.5D, PATROL_SPEED)) {
+                    recalcTicks = 20 + mob.getRandom().nextInt(40);
+                    return;
+                }
+            }
+            recalcTicks = 10;
         }
     }
 }
