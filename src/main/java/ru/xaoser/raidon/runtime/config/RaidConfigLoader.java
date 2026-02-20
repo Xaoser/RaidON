@@ -834,7 +834,10 @@ public final class RaidConfigLoader {
         Boolean burnInSun = obj.has("burn_in_sun") ? obj.get("burn_in_sun").getAsBoolean() : null;
         Boolean canDrown = obj.has("can_drown") ? obj.get("can_drown").getAsBoolean() : null;
         Double knockbackResistance = obj.has("knockback_resistance") ? obj.get("knockback_resistance").getAsDouble() : null;
-        return new MobTraits(burnInSun, canDrown, knockbackResistance);
+        Double movementSpeedMultiplier = obj.has("movement_speed_multiplier") ? obj.get("movement_speed_multiplier").getAsDouble() : null;
+        Double aiSpeedMultiplier = obj.has("ai_speed_multiplier") ? obj.get("ai_speed_multiplier").getAsDouble() : null;
+        Double hardLeashMultiplier = obj.has("hard_leash_multiplier") ? obj.get("hard_leash_multiplier").getAsDouble() : null;
+        return new MobTraits(burnInSun, canDrown, knockbackResistance, movementSpeedMultiplier, aiSpeedMultiplier, hardLeashMultiplier);
     }
 
     private static MobTargeting parseMobTargeting(JsonElement targets, Logger logger, Path file) {

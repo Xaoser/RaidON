@@ -2,6 +2,7 @@ package ru.xaoser.raidon.runtime.raid.ai;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -9,16 +10,21 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.BreedGoal;
+import net.minecraft.world.entity.ai.goal.FollowParentGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
+import net.minecraft.world.entity.ai.goal.PanicGoal;
+import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.TemptGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.damagesource.DamageSource;
 import ru.xaoser.raidon.api.sup.MobTargeting;
+import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -27,62 +33,73 @@ public final class MobAiHelper {
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
+    private static final double DEFAULT_AI_SPEED_MULTIPLIER = 1.0D;
+    private static final double DEFAULT_HARD_LEASH_MULTIPLIER = 1.75D;
 
     private MobAiHelper() {}
 
-    public static void applyBehavior(Mob mob, SpawnBehavior behavior, MobTargeting targeting, BlockPos raidTargetPoint, int mobWanderRadius) {
+    public static void applyBehavior(Mob mob, SpawnBehavior behavior, MobTargeting targeting, MobTraits tuning,
+                                     BlockPos raidTargetPoint, int mobWanderRadius) {
         if (!(mob instanceof PathfinderMob pathfinder)) {
             return;
         }
 
         MobTargeting cfg = targeting == null ? MobTargeting.defaults() : targeting;
+        BehaviorSettings settings = BehaviorSettings.from(tuning);
+        sanitizeGoalSelector(pathfinder);
 
         if (raidTargetPoint != null) {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
-            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
-                    () -> new MoveTowardsRestrictionGoal(pathfinder, 1.0D));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidReturnToRestrictionGoal.class,
+                    () -> new RaidReturnToRestrictionGoal(pathfinder, settings));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 6, RaidPatrolWithinRestrictionGoal.class,
+                    () -> new RaidPatrolWithinRestrictionGoal(pathfinder, settings));
         }
 
         if (behavior == SpawnBehavior.HOSTILE) {
-            setupHostile(pathfinder, cfg);
+            setupHostile(pathfinder, cfg, settings);
         } else {
-            setupNeutral(pathfinder, cfg);
+            setupNeutral(pathfinder, cfg, settings);
         }
     }
 
-    private static void setupHostile(PathfinderMob mob, MobTargeting targeting) {
+    private static void setupHostile(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
         applyFollowRange(mob, targeting.radius());
         ensureBaseDamage(mob);
 
         if (!hasAttackDamageAttribute(mob)) {
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 6, MeleeAttackGoal.class,
-                    () -> new RaidMeleeAttackGoal(mob, 1.2D, true));
+            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
+                    () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true));
         }
 
         Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
 
         if (!targeting.attackTypes().isEmpty() || targeting.attackAll()) {
-            mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, preferredFilter));
-            mob.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
+            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestPreferredTargetGoal.class,
+                    () -> new RaidNearestPreferredTargetGoal(mob, preferredFilter));
+            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 2, RaidNearestFallbackTargetGoal.class,
+                    () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
         } else {
-            mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
+            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestFallbackTargetGoal.class,
+                    () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
         }
     }
 
-    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting) {
+    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
         applyFollowRange(mob, targeting.radius());
         ensureBaseDamage(mob);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.15D, true));
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
-        mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
+        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
+                () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestFallbackTargetGoal.class,
+                () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
     }
 
     private static Predicate<LivingEntity> createPreferredTargetFilter(MobTargeting targeting) {
@@ -132,6 +149,18 @@ public final class MobAiHelper {
             }
             return entity instanceof Player;
         };
+    }
+
+    private static void sanitizeGoalSelector(PathfinderMob mob) {
+        Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
+        goals.removeIf(goal -> {
+            Goal inner = goal.getGoal();
+            return inner instanceof TemptGoal
+                    || inner instanceof PanicGoal
+                    || inner instanceof BreedGoal
+                    || inner instanceof FollowParentGoal
+                    || inner instanceof RandomStrollGoal;
+        });
     }
 
     private static boolean isRaidMob(LivingEntity entity) {
@@ -192,11 +221,10 @@ public final class MobAiHelper {
     }
 
     private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
-                                              Class<? extends Goal> goalClass,
-                                              java.util.function.Supplier<NearestAttackableTargetGoal<?>> supplier) {
+                                              Class<? extends Goal> goalClass, GoalSupplier supplier) {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
         if (!exists) {
-            mob.targetSelector.addGoal(priority, supplier.get());
+            mob.targetSelector.addGoal(priority, supplier.create());
         }
     }
 
@@ -219,6 +247,158 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+    }
+
+    private static final class RaidNearestPlayerTargetGoal extends NearestAttackableTargetGoal<Player> {
+        private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
+            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer);
+        }
+    }
+
+    private static final class RaidNearestPreferredTargetGoal extends NearestAttackableTargetGoal<LivingEntity> {
+        private RaidNearestPreferredTargetGoal(PathfinderMob mob, Predicate<LivingEntity> preferredFilter) {
+            super(mob, LivingEntity.class, 10, true, false, preferredFilter);
+        }
+    }
+
+    private static final class RaidNearestFallbackTargetGoal extends NearestAttackableTargetGoal<LivingEntity> {
+        private RaidNearestFallbackTargetGoal(PathfinderMob mob, Predicate<LivingEntity> fallbackFilter) {
+            super(mob, LivingEntity.class, 10, true, false, fallbackFilter);
+        }
+    }
+
+
+    private static final class RaidReturnToRestrictionGoal extends Goal {
+        private final PathfinderMob mob;
+        private final BehaviorSettings settings;
+        private boolean forcedByHardLeash;
+
+        private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
+            this.mob = mob;
+            this.settings = settings;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            if (!mob.hasRestriction()) {
+                return false;
+            }
+            boolean outsideHardLeash = isOutsideHardLeash();
+            boolean outsideRestrictionWithoutTarget = !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
+            forcedByHardLeash = outsideHardLeash;
+            return outsideHardLeash || outsideRestrictionWithoutTarget;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            if (!mob.hasRestriction()) {
+                return false;
+            }
+            if (forcedByHardLeash) {
+                return !mob.isWithinRestriction(mob.blockPosition());
+            }
+            return !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
+        }
+
+        @Override
+        public void start() {
+            if (forcedByHardLeash) {
+                mob.setTarget(null);
+            }
+            BlockPos restrictCenter = mob.getRestrictCenter();
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D,
+                    1.0D * settings.aiSpeedMultiplier());
+        }
+
+        @Override
+        public void tick() {
+            if (mob.getNavigation().isDone()) {
+                BlockPos restrictCenter = mob.getRestrictCenter();
+                mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D,
+                        1.0D * settings.aiSpeedMultiplier());
+            }
+        }
+
+        private boolean hasActiveTarget() {
+            LivingEntity target = mob.getTarget();
+            return target != null && target.isAlive();
+        }
+
+        private boolean isOutsideHardLeash() {
+            BlockPos center = mob.getRestrictCenter();
+            double hardRadius = Math.max(8.0D, mob.getRestrictRadius() * settings.hardLeashMultiplier());
+            return center.distSqr(mob.blockPosition()) > hardRadius * hardRadius;
+        }
+    }
+
+    private static final class RaidPatrolWithinRestrictionGoal extends Goal {
+        private final PathfinderMob mob;
+        private final BehaviorSettings settings;
+        private int recalcTicks;
+
+        private RaidPatrolWithinRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
+            this.mob = mob;
+            this.settings = settings;
+            this.setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        @Override
+        public boolean canUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public void start() {
+            recalcTicks = 0;
+            moveToNextPoint();
+        }
+
+        @Override
+        public void tick() {
+            if (--recalcTicks <= 0 || mob.getNavigation().isDone()) {
+                moveToNextPoint();
+            }
+        }
+
+        private void moveToNextPoint() {
+            BlockPos center = mob.getRestrictCenter();
+            int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
+            for (int i = 0; i < 12; i++) {
+                int dx = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                int dz = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                BlockPos candidate = center.offset(dx, 0, dz);
+                if (!mob.isWithinRestriction(candidate)) {
+                    continue;
+                }
+                if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, center.getY(), candidate.getZ() + 0.5D,
+                        0.9D * settings.aiSpeedMultiplier())) {
+                    recalcTicks = 10 + mob.getRandom().nextInt(30);
+                    return;
+                }
+            }
+            recalcTicks = 10;
+        }
+    }
+
+    private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier) {
+        private static BehaviorSettings from(MobTraits tuning) {
+            if (tuning == null) {
+                return new BehaviorSettings(DEFAULT_AI_SPEED_MULTIPLIER, DEFAULT_HARD_LEASH_MULTIPLIER);
+            }
+            double aiSpeed = tuning.aiSpeedMultiplier() == null
+                    ? DEFAULT_AI_SPEED_MULTIPLIER
+                    : Math.max(0.2D, tuning.aiSpeedMultiplier());
+            double hardLeash = tuning.hardLeashMultiplier() == null
+                    ? DEFAULT_HARD_LEASH_MULTIPLIER
+                    : Math.max(1.1D, tuning.hardLeashMultiplier());
+            return new BehaviorSettings(aiSpeed, hardLeash);
         }
     }
 }
