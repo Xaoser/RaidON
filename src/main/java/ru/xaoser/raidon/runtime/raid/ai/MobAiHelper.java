@@ -2,6 +2,7 @@ package ru.xaoser.raidon.runtime.raid.ai;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -9,16 +10,20 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.BreedGoal;
+import net.minecraft.world.entity.ai.goal.FollowParentGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
+import net.minecraft.world.entity.ai.goal.PanicGoal;
+import net.minecraft.world.entity.ai.goal.TemptGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.damagesource.DamageSource;
+
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -27,6 +32,8 @@ public final class MobAiHelper {
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
+    private static final double RETURN_TO_ZONE_SPEED = 1.25D;
+    private static final double PATROL_SPEED = 1.0D;
 
     private MobAiHelper() {}
 
@@ -36,11 +43,14 @@ public final class MobAiHelper {
         }
 
         MobTargeting cfg = targeting == null ? MobTargeting.defaults() : targeting;
+        sanitizeGoalSelector(pathfinder);
 
         if (raidTargetPoint != null) {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
-            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 7, MoveTowardsRestrictionGoal.class,
-                    () -> new MoveTowardsRestrictionGoal(pathfinder, 1.0D));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidReturnToRestrictionGoal.class,
+                    () -> new RaidReturnToRestrictionGoal(pathfinder));
+            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 6, RaidPatrolWithinRestrictionGoal.class,
+                    () -> new RaidPatrolWithinRestrictionGoal(pathfinder));
         }
 
         if (behavior == SpawnBehavior.HOSTILE) {
@@ -55,15 +65,15 @@ public final class MobAiHelper {
         ensureBaseDamage(mob);
 
         if (!hasAttackDamageAttribute(mob)) {
-            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 6, MeleeAttackGoal.class,
-                    () -> new RaidMeleeAttackGoal(mob, 1.2D, true));
+            addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
+                    () -> new RaidMeleeAttackGoal(mob, 1.25D, true));
         }
 
         Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
 
         if (!targeting.attackTypes().isEmpty() || targeting.attackAll()) {
             mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, preferredFilter));
@@ -78,10 +88,10 @@ public final class MobAiHelper {
         ensureBaseDamage(mob);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
-        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 3, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.15D, true));
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, NearestAttackableTargetGoal.class,
-                () -> new NearestAttackableTargetGoal<>(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer));
+        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
+                () -> new RaidMeleeAttackGoal(mob, 1.25D, true));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidNearestPlayerTargetGoal.class,
+                () -> new RaidNearestPlayerTargetGoal(mob));
         mob.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, 10, true, false, fallbackFilter));
     }
 
@@ -132,6 +142,17 @@ public final class MobAiHelper {
             }
             return entity instanceof Player;
         };
+    }
+
+    private static void sanitizeGoalSelector(PathfinderMob mob) {
+        Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
+        goals.removeIf(goal -> {
+            Goal inner = goal.getGoal();
+            return inner instanceof TemptGoal
+                    || inner instanceof PanicGoal
+                    || inner instanceof BreedGoal
+                    || inner instanceof FollowParentGoal;
+        });
     }
 
     private static boolean isRaidMob(LivingEntity entity) {
@@ -192,11 +213,10 @@ public final class MobAiHelper {
     }
 
     private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
-                                              Class<? extends Goal> goalClass,
-                                              java.util.function.Supplier<NearestAttackableTargetGoal<?>> supplier) {
+                                              Class<? extends Goal> goalClass, GoalSupplier supplier) {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
         if (!exists) {
-            mob.targetSelector.addGoal(priority, supplier.get());
+            mob.targetSelector.addGoal(priority, supplier.create());
         }
     }
 
@@ -219,6 +239,101 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+    }
+
+    private static final class RaidNearestPlayerTargetGoal extends NearestAttackableTargetGoal<Player> {
+        private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
+            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer);
+        }
+    }
+
+    private static final class RaidReturnToRestrictionGoal extends Goal {
+        private final PathfinderMob mob;
+
+        private RaidReturnToRestrictionGoal(PathfinderMob mob) {
+            this.mob = mob;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
+        }
+
+        @Override
+        public void start() {
+            BlockPos restrictCenter = mob.getRestrictCenter();
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D, RETURN_TO_ZONE_SPEED);
+        }
+
+        @Override
+        public void tick() {
+            if (mob.getNavigation().isDone()) {
+                BlockPos restrictCenter = mob.getRestrictCenter();
+                mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D, RETURN_TO_ZONE_SPEED);
+            }
+        }
+
+        private boolean hasActiveTarget() {
+            LivingEntity target = mob.getTarget();
+            return target != null && target.isAlive();
+        }
+    }
+
+    private static final class RaidPatrolWithinRestrictionGoal extends Goal {
+        private final PathfinderMob mob;
+        private int recalcTicks;
+
+        private RaidPatrolWithinRestrictionGoal(PathfinderMob mob) {
+            this.mob = mob;
+            this.setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        @Override
+        public boolean canUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return mob.hasRestriction() && mob.getTarget() == null && mob.isWithinRestriction(mob.blockPosition());
+        }
+
+        @Override
+        public void start() {
+            recalcTicks = 0;
+            moveToNextPoint();
+        }
+
+        @Override
+        public void tick() {
+            if (--recalcTicks <= 0 || mob.getNavigation().isDone()) {
+                moveToNextPoint();
+            }
+        }
+
+        private void moveToNextPoint() {
+            BlockPos center = mob.getRestrictCenter();
+            int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
+            for (int i = 0; i < 8; i++) {
+                int dx = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                int dz = mob.getRandom().nextInt(radius * 2 + 1) - radius;
+                BlockPos candidate = center.offset(dx, 0, dz);
+                if (!mob.isWithinRestriction(candidate)) {
+                    continue;
+                }
+                if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, center.getY(), candidate.getZ() + 0.5D, PATROL_SPEED)) {
+                    recalcTicks = 20 + mob.getRandom().nextInt(40);
+                    return;
+                }
+            }
+            recalcTicks = 10;
         }
     }
 }
