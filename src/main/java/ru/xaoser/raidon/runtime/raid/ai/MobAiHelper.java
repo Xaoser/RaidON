@@ -212,6 +212,7 @@ public final class MobAiHelper {
         }
     }
 
+
     private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
                                               Class<? extends Goal> goalClass, GoalSupplier supplier) {
         boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
