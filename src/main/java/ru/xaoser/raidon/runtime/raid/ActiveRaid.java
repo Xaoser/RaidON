@@ -307,7 +307,7 @@ class ActiveRaid implements RaidRuntime {
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 mob.addTag(MobAiHelper.RAID_MOB_TAG);
-                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), raidTargetPoint, mobWanderRadius);
+                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(), raidTargetPoint, mobWanderRadius);
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
@@ -528,6 +528,12 @@ class ActiveRaid implements RaidRuntime {
             AttributeInstance kb = mob.getAttribute(Attributes.KNOCKBACK_RESISTANCE);
             if (kb != null) {
                 kb.setBaseValue(Math.max(0.0D, Math.min(1.0D, tuning.knockbackResistance())));
+            }
+        }
+        if (tuning.movementSpeedMultiplier() != null) {
+            AttributeInstance movement = mob.getAttribute(Attributes.MOVEMENT_SPEED);
+            if (movement != null) {
+                movement.setBaseValue(Math.max(0.02D, movement.getBaseValue() * Math.max(0.1D, tuning.movementSpeedMultiplier())));
             }
         }
     }
