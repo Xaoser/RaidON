@@ -251,23 +251,58 @@ public final class MobAiHelper {
         }
     }
 
-    private static final class RaidNearestPlayerTargetGoal extends NearestAttackableTargetGoal<Player> {
+    private abstract static class PersistentRaidTargetGoal<T extends LivingEntity> extends NearestAttackableTargetGoal<T> {
+        private final Predicate<LivingEntity> retentionFilter;
+
+        private PersistentRaidTargetGoal(PathfinderMob mob, Class<T> targetType, int randomInterval, boolean mustSee,
+                                         boolean mustReach, Predicate<LivingEntity> targetPredicate,
+                                         Predicate<LivingEntity> retentionFilter) {
+            super(mob, targetType, randomInterval, mustSee, mustReach, targetPredicate);
+            this.retentionFilter = retentionFilter;
+        }
+
+        @Override
+        public boolean canUse() {
+            LivingEntity current = mob.getTarget();
+            if (isRetainable(current)) {
+                return false;
+            }
+            return super.canUse();
+        }
+
+        @Override
+        public void stop() {
+            LivingEntity previous = mob.getTarget();
+            super.stop();
+            if (isRetainable(previous)) {
+                mob.setTarget(previous);
+            }
+        }
+
+        private boolean isRetainable(LivingEntity entity) {
+            return entity != null && entity.isAlive() && retentionFilter.test(entity);
+        }
+    }
+
+    private static final class RaidNearestPlayerTargetGoal extends PersistentRaidTargetGoal<Player> {
         private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
-            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer);
+            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer,
+                    MobAiHelper::isAggroEligiblePlayer);
         }
     }
 
-    private static final class RaidNearestPreferredTargetGoal extends NearestAttackableTargetGoal<LivingEntity> {
+    private static final class RaidNearestPreferredTargetGoal extends PersistentRaidTargetGoal<LivingEntity> {
         private RaidNearestPreferredTargetGoal(PathfinderMob mob, Predicate<LivingEntity> preferredFilter) {
-            super(mob, LivingEntity.class, 10, true, false, preferredFilter);
+            super(mob, LivingEntity.class, 10, true, false, preferredFilter, preferredFilter);
         }
     }
 
-    private static final class RaidNearestFallbackTargetGoal extends NearestAttackableTargetGoal<LivingEntity> {
+    private static final class RaidNearestFallbackTargetGoal extends PersistentRaidTargetGoal<LivingEntity> {
         private RaidNearestFallbackTargetGoal(PathfinderMob mob, Predicate<LivingEntity> fallbackFilter) {
-            super(mob, LivingEntity.class, 10, true, false, fallbackFilter);
+            super(mob, LivingEntity.class, 10, true, false, fallbackFilter, fallbackFilter);
         }
     }
+
 
 
     private static final class RaidReturnToRestrictionGoal extends Goal {
