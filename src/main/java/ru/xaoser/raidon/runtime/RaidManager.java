@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.Level;
@@ -323,6 +324,11 @@ public final class RaidManager {
             double distSqr = radius * radius;
             level.getPlayers(player -> player.distanceToSqr(centerVec) <= distSqr)
                     .forEach(player -> player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg)));
+        }
+
+        @Override
+        public List<ServerPlayer> playersInRaidZone() {
+            return List.of();
         }
     }
 }

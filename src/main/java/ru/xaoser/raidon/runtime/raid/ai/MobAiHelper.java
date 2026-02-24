@@ -35,6 +35,7 @@ public final class MobAiHelper {
     private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
     private static final String RAID_STATE_TAG = "raidon_ai_state";
     private static final String RAID_PENDING_RETURN_TAG = "raidon_pending_return";
+    private static final String RAID_CHASING_UNTIL_TAG = "raidon_chasing_until";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
     private static final double MIN_PURSUE_RANGE = 160.0D;
@@ -135,6 +136,16 @@ public final class MobAiHelper {
             }
             return !attackTypes.isEmpty() && attackTypes.contains(typeId);
         };
+    }
+
+    private static boolean isChasing(PathfinderMob mob) {
+        long until = mob.getPersistentData().getLong(RAID_CHASING_UNTIL_TAG);
+        return until > mob.level().getGameTime();
+    }
+
+    private static void markChasing(PathfinderMob mob, int ticks) {
+        long until = mob.level().getGameTime() + Math.max(1, ticks);
+        mob.getPersistentData().putLong(RAID_CHASING_UNTIL_TAG, until);
     }
 
     private static Predicate<LivingEntity> createTargetFilter(MobTargeting targeting) {
@@ -373,18 +384,23 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
-            if (--tickCooldown > 0) {
-                return;
-            }
+            if (--tickCooldown > 0) return;
             tickCooldown = 5;
 
             LivingEntity target = mob.getTarget();
             if (target != null && target.isAlive()) {
                 setState(mob, RaidState.ATTACKING);
+                markChasing(mob, 40); // 2 секунды "режим погони" после последнего валидного таргета
                 return;
             }
+
+            // если недавно гнались — остаёмся в ATTACKING логически, а главное: блокируем return по isChasing()
+            if (isChasing(mob)) {
+                setState(mob, RaidState.ATTACKING);
+                return;
+            }
+
             if (mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
-                // If there was recent combat outside restriction, state is set by return goal to RETURNING.
                 if (!isPendingReturn(mob)) {
                     setState(mob, RaidState.GOING_AGGRESIVE);
                 }
@@ -450,33 +466,29 @@ public final class MobAiHelper {
 
         @Override
         public boolean canUse() {
-            LivingEntity target = mob.getTarget();
-            boolean hasActiveTarget = target != null && target.isAlive();
-            if (hasActiveTarget) {
+            // Пока "погоня" активна — возврат запрещён
+            if (isChasing(mob)) return false;
+
+            // Дополнительно: если прямо сейчас есть цель — тоже запрещаем
+            if (hasActiveTarget()) {
                 hadActiveTarget = true;
                 return false;
             }
 
             if (hadActiveTarget && mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
-                // Target was lost/killed outside restriction: mark pending return state.
                 setPendingReturn(mob, true);
             }
             hadActiveTarget = false;
 
-            if (!mob.hasRestriction()) {
-                return false;
-            }
+            if (!mob.hasRestriction()) return false;
             return !mob.isWithinRestriction(mob.blockPosition());
         }
 
         @Override
         public boolean canContinueToUse() {
-            if (hasActiveTarget()) {
-                return false;
-            }
-            if (!mob.hasRestriction()) {
-                return false;
-            }
+            if (isChasing(mob)) return false;
+            if (hasActiveTarget()) return false;
+            if (!mob.hasRestriction()) return false;
             return !mob.isWithinRestriction(mob.blockPosition());
         }
 
@@ -513,14 +525,6 @@ public final class MobAiHelper {
             } else {
                 setState(mob, RaidState.GOING_AGGRESIVE);
             }
-        }
-
-        private void issueMoveToRestriction() {
-            BlockPos restrictCenter = mob.getRestrictCenter();
-            double centerY = resolveNavigationY(mob, restrictCenter);
-            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
-                    1.0D * settings.aiSpeedMultiplier());
-            moveCooldown = 20;
         }
 
         private boolean hasActiveTarget() {
