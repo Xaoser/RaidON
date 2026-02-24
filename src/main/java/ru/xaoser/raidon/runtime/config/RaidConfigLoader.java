@@ -50,7 +50,8 @@ public final class RaidConfigLoader {
                 "points": {
                   "mainpoint": {"x": "current", "y": "current", "z": "current"},
                   "raidspawnpoint": {"x": "current+64", "y": "current", "z": "current+64"},
-                  "raidpoint": {"x": "current", "y": "current", "z": "current"}
+                  "raidpoint": {"x": "current", "y": "current", "z": "current"},
+                  "gather_zone_radius": 50
                 },
                 "gui": {
                   "size": "120, 40"
@@ -505,7 +506,12 @@ public final class RaidConfigLoader {
             public record Condition(String type, int min, int max, int value, String biome, String dimension) {}
         }
 
-        public record Points(JsonElement mainpoint, JsonElement raidspawnpoint, JsonElement raidpoint, Integer mob_wander_radius) {}
+        public record Points(
+                JsonElement mainpoint,
+                JsonElement raidspawnpoint,
+                JsonElement raidpoint,
+                @SerializedName(value = "mob_wander_radius", alternate = {"gather_zone_radius", "collection_zone_radius", "collectionRadius", "gatherZoneRadius", "mobWanderRadius"}) Integer mob_wander_radius
+        ) {}
 
         public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
 

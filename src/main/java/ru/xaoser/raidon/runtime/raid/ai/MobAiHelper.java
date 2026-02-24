@@ -20,6 +20,7 @@ import net.minecraft.world.entity.ai.goal.TemptGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.levelgen.Heightmap;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
@@ -56,6 +57,9 @@ public final class MobAiHelper {
                     () -> new RaidPatrolWithinRestrictionGoal(pathfinder, settings));
         }
 
+        addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidTargetSanitizerGoal.class,
+                () -> new RaidTargetSanitizerGoal(pathfinder));
+
         if (behavior == SpawnBehavior.HOSTILE) {
             setupHostile(pathfinder, cfg, settings);
         } else {
@@ -65,6 +69,7 @@ public final class MobAiHelper {
 
     private static void setupHostile(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
         applyFollowRange(mob, targeting.radius());
+        applyMovementSpeed(mob, settings.movementSpeedMultiplier());
         ensureBaseDamage(mob);
 
         if (!hasAttackDamageAttribute(mob)) {
@@ -91,6 +96,7 @@ public final class MobAiHelper {
 
     private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
         applyFollowRange(mob, targeting.radius());
+        applyMovementSpeed(mob, settings.movementSpeedMultiplier());
         ensureBaseDamage(mob);
         Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
 
@@ -182,6 +188,17 @@ public final class MobAiHelper {
         }
     }
 
+    private static void applyMovementSpeed(PathfinderMob mob, Double movementSpeedMultiplier) {
+        if (movementSpeedMultiplier == null) {
+            return;
+        }
+        AttributeInstance movementSpeed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (movementSpeed != null) {
+            double multiplier = Math.max(0.1D, movementSpeedMultiplier);
+            movementSpeed.setBaseValue(Math.max(0.01D, movementSpeed.getBaseValue() * multiplier));
+        }
+    }
+
     private static boolean hasAttackDamageAttribute(PathfinderMob mob) {
         return mob.getAttribute(Attributes.ATTACK_DAMAGE) != null;
     }
@@ -219,7 +236,6 @@ public final class MobAiHelper {
             mob.goalSelector.addGoal(priority, supplier.create());
         }
     }
-
 
     private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
                                               Class<? extends Goal> goalClass, GoalSupplier supplier) {
@@ -305,6 +321,41 @@ public final class MobAiHelper {
 
 
 
+
+    private static final class RaidTargetSanitizerGoal extends Goal {
+        private final PathfinderMob mob;
+
+        private RaidTargetSanitizerGoal(PathfinderMob mob) {
+            this.mob = mob;
+            this.setFlags(EnumSet.of(Flag.TARGET));
+        }
+
+        @Override
+        public boolean canUse() {
+            return true;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return true;
+        }
+
+        @Override
+        public void tick() {
+            LivingEntity target = mob.getTarget();
+            if (target == null) {
+                return;
+            }
+            if (!target.isAlive()) {
+                mob.setTarget(null);
+                return;
+            }
+            if (target instanceof Player && !isAggroEligiblePlayer(target)) {
+                mob.setTarget(null);
+            }
+        }
+    }
+
     private static final class RaidReturnToRestrictionGoal extends Goal {
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
@@ -344,7 +395,8 @@ public final class MobAiHelper {
                 mob.setTarget(null);
             }
             BlockPos restrictCenter = mob.getRestrictCenter();
-            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D,
+            double centerY = resolveNavigationY(mob, restrictCenter);
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
                     1.0D * settings.aiSpeedMultiplier());
         }
 
@@ -352,7 +404,8 @@ public final class MobAiHelper {
         public void tick() {
             if (mob.getNavigation().isDone()) {
                 BlockPos restrictCenter = mob.getRestrictCenter();
-                mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, restrictCenter.getY(), restrictCenter.getZ() + 0.5D,
+                double centerY = resolveNavigationY(mob, restrictCenter);
+                mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
                         1.0D * settings.aiSpeedMultiplier());
             }
         }
@@ -413,7 +466,8 @@ public final class MobAiHelper {
                 if (!mob.isWithinRestriction(candidate)) {
                     continue;
                 }
-                if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, center.getY(), candidate.getZ() + 0.5D,
+                double candidateY = resolveNavigationY(mob, candidate);
+                if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, candidateY, candidate.getZ() + 0.5D,
                         0.9D * settings.aiSpeedMultiplier())) {
                     recalcTicks = 10 + mob.getRandom().nextInt(30);
                     return;
@@ -423,10 +477,17 @@ public final class MobAiHelper {
         }
     }
 
-    private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier) {
+
+    private static double resolveNavigationY(PathfinderMob mob, BlockPos target) {
+        BlockPos top = mob.level().getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, target);
+        return top.getY();
+    }
+
+
+    private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier, double movementSpeedMultiplier) {
         private static BehaviorSettings from(MobTraits tuning) {
             if (tuning == null) {
-                return new BehaviorSettings(DEFAULT_AI_SPEED_MULTIPLIER, DEFAULT_HARD_LEASH_MULTIPLIER);
+                return new BehaviorSettings(DEFAULT_AI_SPEED_MULTIPLIER, DEFAULT_HARD_LEASH_MULTIPLIER, 1.0D);
             }
             double aiSpeed = tuning.aiSpeedMultiplier() == null
                     ? DEFAULT_AI_SPEED_MULTIPLIER
@@ -434,7 +495,10 @@ public final class MobAiHelper {
             double hardLeash = tuning.hardLeashMultiplier() == null
                     ? DEFAULT_HARD_LEASH_MULTIPLIER
                     : Math.max(1.1D, tuning.hardLeashMultiplier());
-            return new BehaviorSettings(aiSpeed, hardLeash);
+            double movementSpeed = tuning.movementSpeedMultiplier() == null
+                    ? 1.0D
+                    : Math.max(0.1D, tuning.movementSpeedMultiplier());
+            return new BehaviorSettings(aiSpeed, hardLeash, movementSpeed);
         }
     }
 }

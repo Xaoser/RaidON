@@ -103,6 +103,8 @@ Raidpoints
 - `raidspawnpoint` — Spawnpoint of raid mobs
 - `raidpoint` — Point where goes raid mobs
 - `mob_wander_radius` — The radius of the collection area around the `raidpoint` (default is `50`).
+- `gather_zone_radius` — alias for `mob_wander_radius` (same behavior).
+- `collectionRadius` / `gatherZoneRadius` / `mobWanderRadius` — camelCase aliases for the same radius field.
 ---------
 ### Commands
 ---------
