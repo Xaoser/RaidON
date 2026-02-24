@@ -556,6 +556,8 @@ public final class MobAiHelper {
             updateReturnStateLog(mob, decision);
             if (decision.blocked()) {
                 hadActiveTarget = true;
+                LOGGER.debug("[Raidon][AI] return blocked by active target mob={} pos={} target={} inRestriction={}",
+                        mob.getUUID(), mob.blockPosition(), describeTarget(mob.getTarget()), mob.isWithinRestriction(mob.blockPosition()));
                 return false;
             }
 
