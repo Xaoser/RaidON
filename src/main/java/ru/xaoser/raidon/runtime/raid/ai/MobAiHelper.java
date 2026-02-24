@@ -33,6 +33,8 @@ public final class MobAiHelper {
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
+    private static final String RAID_STATE_TAG = "raidon_ai_state";
+    private static final String RAID_PENDING_RETURN_TAG = "raidon_pending_return";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
     private static final double MIN_PURSUE_RANGE = 160.0D;
@@ -59,6 +61,8 @@ public final class MobAiHelper {
                     () -> new RaidPatrolWithinRestrictionGoal(pathfinder, settings));
         }
 
+        addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidStateGoal.class,
+                () -> new RaidStateGoal(pathfinder));
         addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidTargetSanitizerGoal.class,
                 () -> new RaidTargetSanitizerGoal(pathfinder));
 
@@ -256,6 +260,25 @@ public final class MobAiHelper {
         }
     }
 
+    private static void setState(PathfinderMob mob, RaidState state) {
+        mob.getPersistentData().putString(RAID_STATE_TAG, state.name());
+    }
+
+    private static boolean isPendingReturn(PathfinderMob mob) {
+        return mob.getPersistentData().getBoolean(RAID_PENDING_RETURN_TAG);
+    }
+
+    private static void setPendingReturn(PathfinderMob mob, boolean pending) {
+        mob.getPersistentData().putBoolean(RAID_PENDING_RETURN_TAG, pending);
+    }
+
+    private enum RaidState {
+        GOING_AGGRESIVE,
+        IDLE_AGGRESIVE,
+        RETURNING,
+        ATTACKING
+    }
+
     private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
         private final PathfinderMob mob;
 
@@ -330,6 +353,47 @@ public final class MobAiHelper {
         }
     }
 
+    private static final class RaidStateGoal extends Goal {
+        private final PathfinderMob mob;
+        private int tickCooldown;
+
+        private RaidStateGoal(PathfinderMob mob) {
+            this.mob = mob;
+        }
+
+        @Override
+        public boolean canUse() {
+            return true;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return true;
+        }
+
+        @Override
+        public void tick() {
+            if (--tickCooldown > 0) {
+                return;
+            }
+            tickCooldown = 5;
+
+            LivingEntity target = mob.getTarget();
+            if (target != null && target.isAlive()) {
+                setState(mob, RaidState.ATTACKING);
+                return;
+            }
+            if (mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
+                // If there was recent combat outside restriction, state is set by return goal to RETURNING.
+                if (!isPendingReturn(mob)) {
+                    setState(mob, RaidState.GOING_AGGRESIVE);
+                }
+                return;
+            }
+            setState(mob, RaidState.IDLE_AGGRESIVE);
+        }
+    }
+
     private static final class RaidTargetSanitizerGoal extends Goal {
         private final PathfinderMob mob;
         private int checkCooldown;
@@ -375,6 +439,7 @@ public final class MobAiHelper {
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
         private int moveCooldown;
+        private boolean hadActiveTarget;
 
         private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
@@ -385,7 +450,20 @@ public final class MobAiHelper {
 
         @Override
         public boolean canUse() {
-            if (!mob.hasRestriction() || hasActiveTarget()) {
+            LivingEntity target = mob.getTarget();
+            boolean hasActiveTarget = target != null && target.isAlive();
+            if (hasActiveTarget) {
+                hadActiveTarget = true;
+                return false;
+            }
+
+            if (hadActiveTarget && mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
+                // Target was lost/killed outside restriction: mark pending return state.
+                setPendingReturn(mob, true);
+            }
+            hadActiveTarget = false;
+
+            if (!mob.hasRestriction()) {
                 return false;
             }
             return !mob.isWithinRestriction(mob.blockPosition());
@@ -393,7 +471,10 @@ public final class MobAiHelper {
 
         @Override
         public boolean canContinueToUse() {
-            if (!mob.hasRestriction() || hasActiveTarget()) {
+            if (hasActiveTarget()) {
+                return false;
+            }
+            if (!mob.hasRestriction()) {
                 return false;
             }
             return !mob.isWithinRestriction(mob.blockPosition());
@@ -410,6 +491,27 @@ public final class MobAiHelper {
             // Repath only when needed to avoid constant moveTo resets that create stop-start movement.
             if (--moveCooldown <= 0 || mob.getNavigation().isDone()) {
                 issueMoveToRestriction();
+            }
+        }
+
+        @Override
+        public void stop() {
+            if (mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition())) {
+                setPendingReturn(mob, false);
+            }
+        }
+
+        private void issueMoveToRestriction() {
+            BlockPos restrictCenter = mob.getRestrictCenter();
+            double centerY = resolveNavigationY(mob, restrictCenter);
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
+                    1.0D * settings.aiSpeedMultiplier());
+            moveCooldown = 20;
+
+            if (isPendingReturn(mob)) {
+                setState(mob, RaidState.RETURNING);
+            } else {
+                setState(mob, RaidState.GOING_AGGRESIVE);
             }
         }
 
