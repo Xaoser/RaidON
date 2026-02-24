@@ -379,7 +379,8 @@ public final class MobAiHelper {
         private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
             this.settings = settings;
-            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+            // Use only MOVE so this goal does not contend with combat LOOK behavior.
+            this.setFlags(EnumSet.of(Flag.MOVE));
         }
 
         @Override
