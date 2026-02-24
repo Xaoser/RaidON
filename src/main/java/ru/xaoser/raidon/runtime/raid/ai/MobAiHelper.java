@@ -21,6 +21,7 @@ import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
+import org.slf4j.Logger;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
@@ -30,6 +31,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 public final class MobAiHelper {
+    private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(MobAiHelper.class);
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
@@ -272,7 +274,21 @@ public final class MobAiHelper {
     }
 
     private static void setState(PathfinderMob mob, RaidState state) {
+        String previous = mob.getPersistentData().getString(RAID_STATE_TAG);
         mob.getPersistentData().putString(RAID_STATE_TAG, state.name());
+        if (!state.name().equals(previous)) {
+            LOGGER.debug("[Raidon][AI] state change mob={} type={} {} -> {} pos={} restrictionCenter={} restrictionRadius={} target={}",
+                    mob.getUUID(), EntityType.getKey(mob.getType()), previous.isEmpty() ? "<unset>" : previous, state,
+                    mob.blockPosition(), mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
+                    mob.hasRestriction() ? String.format("%.1f", mob.getRestrictRadius()) : "<none>", describeTarget(mob.getTarget()));
+        }
+    }
+
+    private static String describeTarget(LivingEntity target) {
+        if (target == null) {
+            return "<none>";
+        }
+        return EntityType.getKey(target.getType()) + "#" + target.getUUID() + "@" + target.blockPosition();
     }
 
     private static boolean isPendingReturn(PathfinderMob mob) {
@@ -391,6 +407,13 @@ public final class MobAiHelper {
             if (target != null && target.isAlive()) {
                 setState(mob, RaidState.ATTACKING);
                 markChasing(mob, 40); // 2 секунды "режим погони" после последнего валидного таргета
+                LOGGER.debug("[Raidon][AI] target active mob={} target={} inRestriction={} distanceToCenter={}", mob.getUUID(),
+                        describeTarget(target),
+                        mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition()),
+                        mob.hasRestriction() ? String.format("%.2f", Math.sqrt(mob.distanceToSqr(
+                                mob.getRestrictCenter().getX() + 0.5D,
+                                mob.getY(),
+                                mob.getRestrictCenter().getZ() + 0.5D))) : "n/a");
                 return;
             }
 
@@ -442,10 +465,13 @@ public final class MobAiHelper {
                 return;
             }
             if (!target.isAlive()) {
+                LOGGER.debug("[Raidon][AI] clear dead target mob={} target={}", mob.getUUID(), describeTarget(target));
                 mob.setTarget(null);
                 return;
             }
             if (target instanceof Player && !isAggroEligiblePlayer(target)) {
+                LOGGER.debug("[Raidon][AI] clear ineligible player target mob={} target={} spectator={} creative={}",
+                        mob.getUUID(), describeTarget(target), ((Player) target).isSpectator(), ((Player) target).isCreative());
                 mob.setTarget(null);
             }
         }
@@ -467,11 +493,16 @@ public final class MobAiHelper {
         @Override
         public boolean canUse() {
             // Пока "погоня" активна — возврат запрещён
-            if (isChasing(mob)) return false;
+            if (isChasing(mob)) {
+                LOGGER.debug("[Raidon][AI] return blocked by chase-window mob={} pos={} target={}", mob.getUUID(), mob.blockPosition(), describeTarget(mob.getTarget()));
+                return false;
+            }
 
             // Дополнительно: если прямо сейчас есть цель — тоже запрещаем
             if (hasActiveTarget()) {
                 hadActiveTarget = true;
+                LOGGER.debug("[Raidon][AI] return blocked by active target mob={} pos={} target={} inRestriction={}",
+                        mob.getUUID(), mob.blockPosition(), describeTarget(mob.getTarget()), mob.isWithinRestriction(mob.blockPosition()));
                 return false;
             }
 
@@ -495,6 +526,8 @@ public final class MobAiHelper {
         @Override
         public void start() {
             moveCooldown = 0;
+            LOGGER.debug("[Raidon][AI] return start mob={} from={} center={} radius={}",
+                    mob.getUUID(), mob.blockPosition(), mob.getRestrictCenter(), String.format("%.1f", mob.getRestrictRadius()));
             issueMoveToRestriction();
         }
 
@@ -508,6 +541,8 @@ public final class MobAiHelper {
 
         @Override
         public void stop() {
+            LOGGER.debug("[Raidon][AI] return stop mob={} at={} inRestriction={} target={}",
+                    mob.getUUID(), mob.blockPosition(), mob.isWithinRestriction(mob.blockPosition()), describeTarget(mob.getTarget()));
             if (mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition())) {
                 setPendingReturn(mob, false);
             }
@@ -519,6 +554,9 @@ public final class MobAiHelper {
             mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
                     1.0D * settings.aiSpeedMultiplier());
             moveCooldown = 20;
+            LOGGER.debug("[Raidon][AI] return moveTo mob={} from={} to={} navY={} speed={}",
+                    mob.getUUID(), mob.blockPosition(), restrictCenter, String.format("%.2f", centerY),
+                    String.format("%.2f", 1.0D * settings.aiSpeedMultiplier()));
 
             if (isPendingReturn(mob)) {
                 setState(mob, RaidState.RETURNING);
