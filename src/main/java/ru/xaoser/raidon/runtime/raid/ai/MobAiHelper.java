@@ -32,8 +32,12 @@ import java.util.function.Predicate;
 public final class MobAiHelper {
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
+    private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
+    private static final String RAID_STATE_TAG = "raidon_ai_state";
+    private static final String RAID_PENDING_RETURN_TAG = "raidon_pending_return";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double MIN_PLAYER_AGGRO_RANGE = 80.0D;
+    private static final double MIN_PURSUE_RANGE = 160.0D;
     private static final double DEFAULT_AI_SPEED_MULTIPLIER = 1.0D;
     private static final double DEFAULT_HARD_LEASH_MULTIPLIER = 1.75D;
 
@@ -57,6 +61,8 @@ public final class MobAiHelper {
                     () -> new RaidPatrolWithinRestrictionGoal(pathfinder, settings));
         }
 
+        addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidStateGoal.class,
+                () -> new RaidStateGoal(pathfinder));
         addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidTargetSanitizerGoal.class,
                 () -> new RaidTargetSanitizerGoal(pathfinder));
 
@@ -184,7 +190,8 @@ public final class MobAiHelper {
         AttributeInstance followRange = mob.getAttribute(Attributes.FOLLOW_RANGE);
         if (followRange != null) {
             double configured = radius == null || radius <= 0.0D ? MIN_PLAYER_AGGRO_RANGE : radius;
-            followRange.setBaseValue(Math.max(MIN_PLAYER_AGGRO_RANGE, configured));
+            // Keep a high minimum so chase behavior does not drop target just due to short follow distance.
+            followRange.setBaseValue(Math.max(MIN_PURSUE_RANGE, configured));
         }
     }
 
@@ -195,7 +202,15 @@ public final class MobAiHelper {
         AttributeInstance movementSpeed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         if (movementSpeed != null) {
             double multiplier = Math.max(0.1D, movementSpeedMultiplier);
-            movementSpeed.setBaseValue(Math.max(0.01D, movementSpeed.getBaseValue() * multiplier));
+            // Persist original base speed once to avoid compounding multiplication when applyBehavior runs again.
+            double storedBase = mob.getPersistentData().contains(RAID_BASE_SPEED_TAG)
+                    ? mob.getPersistentData().getDouble(RAID_BASE_SPEED_TAG)
+                    : movementSpeed.getBaseValue();
+            if (storedBase <= 0.0D) {
+                storedBase = movementSpeed.getBaseValue();
+            }
+            mob.getPersistentData().putDouble(RAID_BASE_SPEED_TAG, storedBase);
+            movementSpeed.setBaseValue(Math.max(0.01D, storedBase * multiplier));
         }
     }
 
@@ -243,6 +258,25 @@ public final class MobAiHelper {
         if (!exists) {
             mob.targetSelector.addGoal(priority, supplier.create());
         }
+    }
+
+    private static void setState(PathfinderMob mob, RaidState state) {
+        mob.getPersistentData().putString(RAID_STATE_TAG, state.name());
+    }
+
+    private static boolean isPendingReturn(PathfinderMob mob) {
+        return mob.getPersistentData().getBoolean(RAID_PENDING_RETURN_TAG);
+    }
+
+    private static void setPendingReturn(PathfinderMob mob, boolean pending) {
+        mob.getPersistentData().putBoolean(RAID_PENDING_RETURN_TAG, pending);
+    }
+
+    private enum RaidState {
+        GOING_AGGRESIVE,
+        IDLE_AGGRESIVE,
+        RETURNING,
+        ATTACKING
     }
 
     private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
@@ -319,11 +353,50 @@ public final class MobAiHelper {
         }
     }
 
+    private static final class RaidStateGoal extends Goal {
+        private final PathfinderMob mob;
+        private int tickCooldown;
 
+        private RaidStateGoal(PathfinderMob mob) {
+            this.mob = mob;
+        }
 
+        @Override
+        public boolean canUse() {
+            return true;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return true;
+        }
+
+        @Override
+        public void tick() {
+            if (--tickCooldown > 0) {
+                return;
+            }
+            tickCooldown = 5;
+
+            LivingEntity target = mob.getTarget();
+            if (target != null && target.isAlive()) {
+                setState(mob, RaidState.ATTACKING);
+                return;
+            }
+            if (mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
+                // If there was recent combat outside restriction, state is set by return goal to RETURNING.
+                if (!isPendingReturn(mob)) {
+                    setState(mob, RaidState.GOING_AGGRESIVE);
+                }
+                return;
+            }
+            setState(mob, RaidState.IDLE_AGGRESIVE);
+        }
+    }
 
     private static final class RaidTargetSanitizerGoal extends Goal {
         private final PathfinderMob mob;
+        private int checkCooldown;
 
         private RaidTargetSanitizerGoal(PathfinderMob mob) {
             this.mob = mob;
@@ -342,6 +415,12 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
+            // Small interval avoids doing player-mode checks every tick while still clearing invalid targets quickly.
+            if (--checkCooldown > 0) {
+                return;
+            }
+            checkCooldown = 5;
+
             LivingEntity target = mob.getTarget();
             if (target == null) {
                 return;
@@ -359,7 +438,8 @@ public final class MobAiHelper {
     private static final class RaidReturnToRestrictionGoal extends Goal {
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
-        private boolean forcedByHardLeash;
+        private int moveCooldown;
+        private boolean hadActiveTarget;
 
         private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
@@ -369,44 +449,68 @@ public final class MobAiHelper {
 
         @Override
         public boolean canUse() {
+            LivingEntity target = mob.getTarget();
+            boolean hasActiveTarget = target != null && target.isAlive();
+            if (hasActiveTarget) {
+                hadActiveTarget = true;
+                return false;
+            }
+
+            if (hadActiveTarget && mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
+                // Target was lost/killed outside restriction: mark pending return state.
+                setPendingReturn(mob, true);
+            }
+            hadActiveTarget = false;
+
             if (!mob.hasRestriction()) {
                 return false;
             }
-            boolean outsideHardLeash = isOutsideHardLeash();
-            boolean outsideRestrictionWithoutTarget = !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
-            forcedByHardLeash = outsideHardLeash;
-            return outsideHardLeash || outsideRestrictionWithoutTarget;
+            return !mob.isWithinRestriction(mob.blockPosition());
         }
 
         @Override
         public boolean canContinueToUse() {
+            if (hasActiveTarget()) {
+                return false;
+            }
             if (!mob.hasRestriction()) {
                 return false;
             }
-            if (forcedByHardLeash) {
-                return !mob.isWithinRestriction(mob.blockPosition());
-            }
-            return !mob.isWithinRestriction(mob.blockPosition()) && !hasActiveTarget();
+            return !mob.isWithinRestriction(mob.blockPosition());
         }
 
         @Override
         public void start() {
-            if (forcedByHardLeash) {
-                mob.setTarget(null);
-            }
-            BlockPos restrictCenter = mob.getRestrictCenter();
-            double centerY = resolveNavigationY(mob, restrictCenter);
-            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
-                    1.0D * settings.aiSpeedMultiplier());
+            moveCooldown = 0;
+            issueMoveToRestriction();
         }
 
         @Override
         public void tick() {
-            if (mob.getNavigation().isDone()) {
-                BlockPos restrictCenter = mob.getRestrictCenter();
-                double centerY = resolveNavigationY(mob, restrictCenter);
-                mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
-                        1.0D * settings.aiSpeedMultiplier());
+            // Repath only when needed to avoid constant moveTo resets that create stop-start movement.
+            if (--moveCooldown <= 0 || mob.getNavigation().isDone()) {
+                issueMoveToRestriction();
+            }
+        }
+
+        @Override
+        public void stop() {
+            if (mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition())) {
+                setPendingReturn(mob, false);
+            }
+        }
+
+        private void issueMoveToRestriction() {
+            BlockPos restrictCenter = mob.getRestrictCenter();
+            double centerY = resolveNavigationY(mob, restrictCenter);
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
+                    1.0D * settings.aiSpeedMultiplier());
+            moveCooldown = 20;
+
+            if (isPendingReturn(mob)) {
+                setState(mob, RaidState.RETURNING);
+            } else {
+                setState(mob, RaidState.GOING_AGGRESIVE);
             }
         }
 
@@ -414,18 +518,16 @@ public final class MobAiHelper {
             LivingEntity target = mob.getTarget();
             return target != null && target.isAlive();
         }
-
-        private boolean isOutsideHardLeash() {
-            BlockPos center = mob.getRestrictCenter();
-            double hardRadius = Math.max(8.0D, mob.getRestrictRadius() * settings.hardLeashMultiplier());
-            return center.distSqr(mob.blockPosition()) > hardRadius * hardRadius;
-        }
     }
 
     private static final class RaidPatrolWithinRestrictionGoal extends Goal {
+        private static final double ARRIVAL_DISTANCE_SQR = 2.25D;
+
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
         private int recalcTicks;
+        private int reselectionCooldown;
+        private BlockPos currentPatrolTarget;
 
         private RaidPatrolWithinRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
@@ -446,12 +548,29 @@ public final class MobAiHelper {
         @Override
         public void start() {
             recalcTicks = 0;
+            reselectionCooldown = 0;
+            currentPatrolTarget = null;
             moveToNextPoint();
         }
 
         @Override
         public void tick() {
-            if (--recalcTicks <= 0 || mob.getNavigation().isDone()) {
+            if (recalcTicks > 0) {
+                recalcTicks--;
+            }
+            if (reselectionCooldown > 0) {
+                reselectionCooldown--;
+            }
+
+            boolean hasDestination = currentPatrolTarget != null;
+            boolean reachedDestination = hasDestination && mob.distanceToSqr(
+                    currentPatrolTarget.getX() + 0.5D,
+                    currentPatrolTarget.getY(),
+                    currentPatrolTarget.getZ() + 0.5D
+            ) <= ARRIVAL_DISTANCE_SQR;
+
+            // Keep patrol fluid by selecting a new point quickly after arrival, but with a short throttle to avoid spam.
+            if (reselectionCooldown <= 0 && (recalcTicks <= 0 || mob.getNavigation().isDone() || reachedDestination)) {
                 moveToNextPoint();
             }
         }
@@ -459,30 +578,51 @@ public final class MobAiHelper {
         private void moveToNextPoint() {
             BlockPos center = mob.getRestrictCenter();
             int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
-            for (int i = 0; i < 12; i++) {
-                int dx = mob.getRandom().nextInt(radius * 2 + 1) - radius;
-                int dz = mob.getRandom().nextInt(radius * 2 + 1) - radius;
-                BlockPos candidate = center.offset(dx, 0, dz);
+            for (int i = 0; i < 24; i++) {
+                // sqrt radius sampling gives uniform area coverage instead of over-biasing the restriction edge.
+                double angle = mob.getRandom().nextDouble() * (Math.PI * 2.0D);
+                double randomRadius = Math.sqrt(mob.getRandom().nextDouble()) * radius;
+                int candidateX = center.getX() + Mth.floor(Mth.cos((float) angle) * (float) randomRadius);
+                int candidateZ = center.getZ() + Mth.floor(Mth.sin((float) angle) * (float) randomRadius);
+
+                int candidateSurfaceY = mob.level().getHeightmapPos(
+                        Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        new BlockPos(candidateX, mob.blockPosition().getY(), candidateZ)
+                ).getY();
+                BlockPos candidate = new BlockPos(candidateX, candidateSurfaceY, candidateZ);
                 if (!mob.isWithinRestriction(candidate)) {
                     continue;
                 }
+
+                // Cheap rejection of poor nodes (water/liquid or large vertical jump) to reduce stalled paths.
+                if (!mob.level().getBlockState(candidate).getFluidState().isEmpty()
+                        || !mob.level().getBlockState(candidate.above()).getFluidState().isEmpty()) {
+                    continue;
+                }
+                if (Math.abs(candidateSurfaceY - mob.blockPosition().getY()) > 12) {
+                    continue;
+                }
+
                 double candidateY = resolveNavigationY(mob, candidate);
                 if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, candidateY, candidate.getZ() + 0.5D,
                         0.9D * settings.aiSpeedMultiplier())) {
-                    recalcTicks = 10 + mob.getRandom().nextInt(30);
+                    currentPatrolTarget = candidate;
+                    recalcTicks = 18 + mob.getRandom().nextInt(18);
+                    reselectionCooldown = 6;
                     return;
                 }
             }
+
+            currentPatrolTarget = null;
             recalcTicks = 10;
+            reselectionCooldown = 8;
         }
     }
 
-
     private static double resolveNavigationY(PathfinderMob mob, BlockPos target) {
         BlockPos top = mob.level().getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, target);
-        return top.getY();
+        return top.getY() + 1;
     }
-
 
     private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier, double movementSpeedMultiplier) {
         private static BehaviorSettings from(MobTraits tuning) {
