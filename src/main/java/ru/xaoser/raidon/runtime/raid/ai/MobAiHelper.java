@@ -325,9 +325,6 @@ public final class MobAiHelper {
         }
     }
 
-
-
-
     private static final class RaidTargetSanitizerGoal extends Goal {
         private final PathfinderMob mob;
         private int nextSanitizeTick;
@@ -506,12 +503,10 @@ public final class MobAiHelper {
         }
     }
 
-
     private static double resolveNavigationY(PathfinderMob mob, BlockPos target) {
         BlockPos top = mob.level().getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, target);
         return top.getY() + 1;
     }
-
 
     private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier, double movementSpeedMultiplier) {
         private static BehaviorSettings from(MobTraits tuning) {
