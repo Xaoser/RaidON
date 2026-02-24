@@ -196,15 +196,12 @@ public final class MobAiHelper {
         AttributeInstance movementSpeed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         if (movementSpeed != null) {
             double multiplier = Math.max(0.1D, movementSpeedMultiplier);
-            // Persist original base speed once to avoid compounding multiplication when applyBehavior runs again.
-            double storedBase = mob.getPersistentData().contains(RAID_BASE_SPEED_TAG)
-                    ? mob.getPersistentData().getDouble(RAID_BASE_SPEED_TAG)
-                    : movementSpeed.getBaseValue();
-            if (storedBase <= 0.0D) {
-                storedBase = movementSpeed.getBaseValue();
+            // Store the pre-raid base speed once so repeated applyBehavior calls do not compound speed multipliers.
+            if (!mob.getPersistentData().contains(RAID_BASE_SPEED_TAG)) {
+                mob.getPersistentData().putDouble(RAID_BASE_SPEED_TAG, movementSpeed.getBaseValue());
             }
-            mob.getPersistentData().putDouble(RAID_BASE_SPEED_TAG, storedBase);
-            movementSpeed.setBaseValue(Math.max(0.01D, storedBase * multiplier));
+            double baseSpeed = mob.getPersistentData().getDouble(RAID_BASE_SPEED_TAG);
+            movementSpeed.setBaseValue(Math.max(0.01D, baseSpeed * multiplier));
         }
     }
 
@@ -330,7 +327,7 @@ public final class MobAiHelper {
 
     private static final class RaidTargetSanitizerGoal extends Goal {
         private final PathfinderMob mob;
-        private int checkCooldown;
+        private int nextSanitizeTick;
 
         private RaidTargetSanitizerGoal(PathfinderMob mob) {
             this.mob = mob;
@@ -349,11 +346,11 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
-            // Small interval avoids doing player-mode checks every tick while still clearing invalid targets quickly.
-            if (--checkCooldown > 0) {
+            // Throttle sanity checks slightly to reduce per-tick overhead while keeping targets fresh.
+            if (--nextSanitizeTick > 0) {
                 return;
             }
-            checkCooldown = 5;
+            nextSanitizeTick = 5;
 
             LivingEntity target = mob.getTarget();
             if (target == null) {
@@ -373,12 +370,13 @@ public final class MobAiHelper {
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
         private boolean forcedByHardLeash;
-        private int moveCooldown;
+        private int repathCooldown;
 
         private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
             this.settings = settings;
-            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+            // Use only MOVE so this goal does not contend with combat LOOK behavior.
+            this.setFlags(EnumSet.of(Flag.MOVE));
         }
 
         @Override
@@ -408,24 +406,24 @@ public final class MobAiHelper {
             if (forcedByHardLeash) {
                 mob.setTarget(null);
             }
-            moveCooldown = 0;
-            issueMoveToRestriction();
+            repathCooldown = 0;
+            moveToRestrictCenter();
         }
 
         @Override
         public void tick() {
-            // Repath only when needed to avoid constant moveTo resets that create stop-start movement.
-            if (--moveCooldown <= 0 || mob.getNavigation().isDone()) {
-                issueMoveToRestriction();
+            // Repath on completion or on a short cooldown to recover from occasional stuck states without reset spam.
+            if (--repathCooldown <= 0 || mob.getNavigation().isDone()) {
+                moveToRestrictCenter();
             }
         }
 
-        private void issueMoveToRestriction() {
+        private void moveToRestrictCenter() {
             BlockPos restrictCenter = mob.getRestrictCenter();
             double centerY = resolveNavigationY(mob, restrictCenter);
             mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
                     1.0D * settings.aiSpeedMultiplier());
-            moveCooldown = 20;
+            repathCooldown = 20;
         }
 
         private boolean hasActiveTarget() {
@@ -469,7 +467,7 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
-            // Avoid using navigation.isDone() here; brief path completion/stuck reports can cause rapid target reselection.
+            // Avoid navigation.isDone()-based reselection; brief done/stuck states can cause jerky stop-start movement.
             if (--recalcTicks <= 0) {
                 moveToNextPoint();
             }
@@ -481,26 +479,26 @@ public final class MobAiHelper {
             for (int i = 0; i < 12; i++) {
                 int dx = mob.getRandom().nextInt(radius * 2 + 1) - radius;
                 int dz = mob.getRandom().nextInt(radius * 2 + 1) - radius;
-                int candidateX = center.getX() + dx;
-                int candidateZ = center.getZ() + dz;
-                // Use terrain-aware Y for candidate selection so pathfinding starts from realistic ground positions.
-                int candidateSurfaceY = mob.level().getHeightmapPos(
-                        Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                        new BlockPos(candidateX, mob.blockPosition().getY(), candidateZ)
-                ).getY();
-                BlockPos candidate = new BlockPos(candidateX, candidateSurfaceY, candidateZ);
-                if (!mob.isWithinRestriction(candidate)) {
+                int x = center.getX() + dx;
+                int z = center.getZ() + dz;
+
+                // Build candidate from center XZ and terrain height so pathing points are valid on uneven ground.
+                BlockPos xzCandidate = new BlockPos(x, center.getY(), z);
+                if (!mob.isWithinRestriction(xzCandidate)) {
                     continue;
                 }
+                BlockPos surfacePos = mob.level().getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, xzCandidate);
+                BlockPos candidate = new BlockPos(x, surfacePos.getY(), z);
+
                 double candidateY = resolveNavigationY(mob, candidate);
                 if (mob.getNavigation().moveTo(candidate.getX() + 0.5D, candidateY, candidate.getZ() + 0.5D,
                         0.9D * settings.aiSpeedMultiplier())) {
-                    // Longer interval reduces path churn and smooths patrol movement.
+                    // Longer patrol intervals reduce path recalculation churn and smooth idle roaming.
                     recalcTicks = 40 + mob.getRandom().nextInt(60);
                     return;
                 }
             }
-            // Short fallback retry if all candidates fail this round.
+            // Brief retry delay when no valid move target is found.
             recalcTicks = 20;
         }
     }
