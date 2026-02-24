@@ -444,7 +444,8 @@ public final class MobAiHelper {
         private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
             this.mob = mob;
             this.settings = settings;
-            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+            // Use only MOVE so this goal does not contend with combat LOOK behavior.
+            this.setFlags(EnumSet.of(Flag.MOVE));
         }
 
         @Override
@@ -512,6 +513,14 @@ public final class MobAiHelper {
             } else {
                 setState(mob, RaidState.GOING_AGGRESIVE);
             }
+        }
+
+        private void issueMoveToRestriction() {
+            BlockPos restrictCenter = mob.getRestrictCenter();
+            double centerY = resolveNavigationY(mob, restrictCenter);
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
+                    1.0D * settings.aiSpeedMultiplier());
+            moveCooldown = 20;
         }
 
         private boolean hasActiveTarget() {
