@@ -70,7 +70,7 @@ public final class RaidonCommand {
                 return 0;
             }
             case AREA_BUSY -> {
-                source.sendFailure(Component.literal("РќРµР»СЊР·СЏ Р·Р°РїСѓСЃС‚РёС‚СЊ СЂРµР№Рґ: РІ СЌС‚РѕР№ РѕР±Р»Р°СЃС‚Рё СѓР¶Рµ РёРґС‘С‚ РґСЂСѓРіРѕР№ СЂРµР№Рґ."));
+                source.sendFailure(Component.literal("Area is busy, raid is cancelled"));
                 return 0;
             }
             case NOT_FOUND -> {

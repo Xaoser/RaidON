@@ -117,7 +117,7 @@ If you want use NBT style config, just write:
           "type": "minecraft:zombie",
           "count": 1,
           "ai": "hostile",
-          "nbt": "{Health:40.0f, CanPickUpLoot:1b, PersistenceRequired:1b}"
+          "nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
         }
       ],
       "on_end_nbt": "{actions:[{type:broadcast, text:wave finished now}]}"
@@ -132,7 +132,7 @@ If you want full summon-style NBT, just write normal SNBT string like in command
 "nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
 ```
 
-If you do not want escape hell, you can write same thing as JSON object:
+If you do not want escape previous style, you can write same thing as JSON object:
 ```json
 "nbt": {
   "Health": "40.0f",
@@ -154,12 +154,6 @@ For end actions you can use object, SNBT string, or just list:
   { "type": "command", "command": "say wave cleared" }
 ]
 ```
-
-You can use NBT mode for:
-- mob NBT
-- raid start trigger
-- wave end actions
-- raid end actions
 
 What is supported now:
 - exact SNBT like in `/summon`
