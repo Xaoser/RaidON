@@ -12,11 +12,11 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 public enum RaidHudOverlay implements IGuiOverlay {
     INSTANCE;
 
-    private static final int DEFAULT_PANEL_WIDTH = 190;
-    private static final int DEFAULT_PANEL_HEIGHT = 44;
-    private static final int DEFAULT_BAR_HEIGHT = 12;
+    private static final int DEFAULT_PANEL_WIDTH = 168;
+    private static final int DEFAULT_PANEL_HEIGHT = 40;
+    private static final int DEFAULT_BAR_HEIGHT = 10;
     private static final int PANEL_MARGIN = 14;
-    private static final int PANEL_BOTTOM = 20;
+    private static final int PANEL_BOTTOM = 54;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -48,7 +48,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
 
         if (useCustomGui) {
             renderCustomHud(guiGraphics, font, x, y, panelWidth, panelHeight, waveProgress,
-                    progressEmptyTexture, progressFullTexture, waveText, mobsText);
+                    progressEmptyTexture, progressFullTexture, raidText, waveText, mobsText);
             return;
         }
 
@@ -57,8 +57,10 @@ public enum RaidHudOverlay implements IGuiOverlay {
 
     private static void renderCustomHud(GuiGraphics guiGraphics, Font font, int x, int y, int width, int height,
                                         float progress, ResourceLocation emptyTexture, ResourceLocation fullTexture,
-                                        Component waveText, Component mobsText) {
+                                        Component raidText, Component waveText, Component mobsText) {
         int filledWidth = Math.max(0, Math.min(width, Math.round(width * progress)));
+        int infoY = y + height + 4;
+        int mobsTextX = x + width - font.width(mobsText);
 
         if (emptyTexture != null) {
             guiGraphics.blit(emptyTexture, x, y, 0, 0, width, height, width, height);
@@ -67,8 +69,9 @@ public enum RaidHudOverlay implements IGuiOverlay {
             guiGraphics.blit(fullTexture, x, y, 0, 0, filledWidth, height, width, height);
         }
 
-        guiGraphics.drawString(font, waveText, x, y - 12, 0xF5E6BA, true);
-        guiGraphics.drawString(font, mobsText, x, y + height + 4, 0xFFF4DE, true);
+        guiGraphics.drawString(font, raidText, x, y - 12, 0xF5E6BA, true);
+        guiGraphics.drawString(font, waveText, x, infoY, 0xFFF4DE, true);
+        guiGraphics.drawString(font, mobsText, mobsTextX, infoY, 0xFFF4DE, true);
     }
 
     private static void renderDefaultHud(GuiGraphics guiGraphics, Font font, int x, int y, int width, int height,
@@ -77,16 +80,17 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int top = y;
         int right = x + width;
         int bottom = y + height;
-        int barX = left + 12;
-        int barY = top + height - DEFAULT_BAR_HEIGHT - 10;
-        int barWidth = width - 24;
+        int barX = left + 10;
+        int barY = top + 16;
+        int barWidth = width - 20;
         int filledWidth = Math.max(0, Math.min(barWidth, Math.round(barWidth * progress)));
+        int infoY = barY + DEFAULT_BAR_HEIGHT + 5;
 
         guiGraphics.fill(left + 2, top + 2, right + 2, bottom + 2, 0x55000000);
         guiGraphics.fill(left, top, right, bottom, 0xCC120A0A);
         guiGraphics.fill(left + 2, top + 2, right - 2, bottom - 2, 0xCC241313);
-        guiGraphics.fill(left + 2, top + 18, right - 2, top + 19, 0x88C58B2A);
-        guiGraphics.fill(left + 8, barY - 2, right - 8, barY + DEFAULT_BAR_HEIGHT + 2, 0xAA0A0505);
+        guiGraphics.fill(left + 2, top + 14, right - 2, top + 15, 0x88C58B2A);
+        guiGraphics.fill(left + 7, barY - 2, right - 7, barY + DEFAULT_BAR_HEIGHT + 2, 0xAA0A0505);
         guiGraphics.fill(barX, barY, barX + barWidth, barY + DEFAULT_BAR_HEIGHT, 0xFF2D1717);
         guiGraphics.fill(barX + 1, barY + 1, barX + barWidth - 1, barY + DEFAULT_BAR_HEIGHT - 1, 0xFF4A2323);
         if (filledWidth > 0) {
@@ -95,8 +99,8 @@ public enum RaidHudOverlay implements IGuiOverlay {
         }
 
         guiGraphics.drawString(font, raidText, left + 10, top + 5, 0xFFF1C46D, true);
-        guiGraphics.drawString(font, waveText, left + 10, top + 18, 0xFFF7EED7, false);
+        guiGraphics.drawString(font, waveText, left + 10, infoY, 0xFFF7EED7, false);
         int mobsTextX = right - 10 - font.width(mobsText);
-        guiGraphics.drawString(font, mobsText, mobsTextX, top + 18, 0xFFF7D0C5, false);
+        guiGraphics.drawString(font, mobsText, mobsTextX, infoY, 0xFFF7D0C5, false);
     }
 }

@@ -42,6 +42,7 @@ public final class MobAiHelper {
     private static final double EXTRA_HARD_BOUNDARY_RADIUS = 30.0D;
     private static final double DEFAULT_AI_SPEED_MULTIPLIER = 1.0D;
     private static final double DEFAULT_HARD_LEASH_MULTIPLIER = 1.75D;
+    private static final double MIN_COMBAT_REACH = 1.75D;
 
     private MobAiHelper() {}
 
@@ -536,15 +537,16 @@ public final class MobAiHelper {
                 moveCooldown = 4 + mob.getRandom().nextInt(4);
             }
 
-            boolean withinAttackRange = mob.isWithinMeleeAttackRange(target);
+            double distToEnemySqr = mob.distanceToSqr(target);
+            boolean withinAttackRange = distToEnemySqr <= getAttackReachSqr(target);
             if (withinAttackRange) {
                 mob.getNavigation().stop();
             }
-            checkAndPerformAttack(target, withinAttackRange);
+            checkAndPerformAttack(target, distToEnemySqr);
         }
 
-        private void checkAndPerformAttack(LivingEntity enemy, boolean withinAttackRange) {
-            if (withinAttackRange && attackCooldown <= 0) {
+        private void checkAndPerformAttack(LivingEntity enemy, double distToEnemySqr) {
+            if (distToEnemySqr <= getAttackReachSqr(enemy) && attackCooldown <= 0) {
                 attackCooldown = adjustedTickDelay(20);
                 mob.swing(InteractionHand.MAIN_HAND);
                 if (mob.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
@@ -555,6 +557,12 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+
+        private double getAttackReachSqr(LivingEntity enemy) {
+            double vanillaReach = mob.getMeleeAttackRangeSqr(enemy);
+            double paddedReach = Math.max(MIN_COMBAT_REACH, mob.getBbWidth() + enemy.getBbWidth() + 0.75D);
+            return Math.max(vanillaReach, paddedReach * paddedReach);
         }
     }
 
