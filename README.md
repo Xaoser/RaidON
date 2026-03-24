@@ -127,16 +127,56 @@ If you want use NBT style config, just write:
 }
 ```
 
+If you want full summon-style NBT, just write normal SNBT string like in command:
+```json
+"nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
+```
+
+If you do not want escape hell, you can write same thing as JSON object:
+```json
+"nbt": {
+  "Health": "40.0f",
+  "CanPickUpLoot": "1b",
+  "PersistenceRequired": true,
+  "CustomName": { "text": "Boss Zombie", "color": "red" },
+  "CustomNameVisible": true,
+  "ActiveEffects": [
+    { "Id": "1b", "Amplifier": "1b", "Duration": 1200 }
+  ],
+  "ArmorDropChances": ["0.0f", "0.0f", "0.25f", "0.5f"]
+}
+```
+
+For end actions you can use object, SNBT string, or just list:
+```json
+"on_end_nbt": [
+  { "type": "broadcast", "text": "wave finished now" },
+  { "type": "command", "command": "say wave cleared" }
+]
+```
+
 You can use NBT mode for:
 - mob NBT
 - raid start trigger
 - wave end actions
 - raid end actions
 
-Relaxed NBT is supported too:
-- `text:raid finished now` works
-- `entity:minecraft:zombie` works
-- inner `\"...\"` is not mandatory for simple string values
+What is supported now:
+- exact SNBT like in `/summon`
+- JSON object to NBT convert
+- JSON array to NBT list convert
+- relaxed simple strings in SNBT:
+  `text:raid finished now` works
+  `entity:minecraft:zombie` works
+- `CustomName` can be plain string:
+  `"CustomName": "Boss Zombie"`
+- `CustomName` can be text component object:
+  `"CustomName": { "text": "Boss Zombie", "bold": true }`
+- `display.Lore` can be string list or text component list
+- exact typed values inside JSON object can be written as strings:
+  `"1b"`, `"20s"`, `"40.0f"`, `"[I;1,2,3,4]"`
+- if you want force exact raw NBT in object mode, use:
+  `{"$snbt":"[I;1,2,3,4]"}`
 
 ## Raid points
 - `mainpoint` = center of raid

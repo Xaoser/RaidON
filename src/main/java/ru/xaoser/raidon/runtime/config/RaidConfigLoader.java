@@ -802,12 +802,8 @@ public final class RaidConfigLoader {
         if (startNbt == null || startNbt.isJsonNull()) {
             return null;
         }
-        if (!(startNbt.isJsonPrimitive() && startNbt.getAsJsonPrimitive().isString())) {
-            logger.warn("[Raidon] Invalid start_nbt in {}. Expected NBT string.", file.getFileName());
-            return null;
-        }
         try {
-            CompoundTag tag = RelaxedNbtParser.parseCompound(startNbt.getAsString().trim());
+            CompoundTag tag = RelaxedNbtParser.parseCompound(startNbt);
             RaidStartSettings.Trigger trigger = parseTrigger(firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event")));
             ResourceLocation entity = parseOptionalResourceLocation(getTagString(tag, "entity"));
             ResourceLocation item = parseOptionalResourceLocation(getTagString(tag, "item"));
@@ -887,13 +883,16 @@ public final class RaidConfigLoader {
         if (!nbtSystemEnabled || actionsNbt == null || actionsNbt.isJsonNull()) {
             return List.of();
         }
-        if (!(actionsNbt.isJsonPrimitive() && actionsNbt.getAsJsonPrimitive().isString())) {
-            logger.warn("[Raidon] Invalid {} in {}. Expected NBT string.", key, file.getFileName());
-            return List.of();
-        }
         try {
-            CompoundTag root = RelaxedNbtParser.parseCompound(actionsNbt.getAsString().trim());
-            return parseActionsFromNbt(root);
+            Tag root = RelaxedNbtParser.parseTag(actionsNbt);
+            if (root instanceof CompoundTag compoundTag) {
+                return parseActionsFromNbt(compoundTag);
+            }
+            if (root instanceof ListTag listTag) {
+                return parseActionsFromNbtList(listTag);
+            }
+            logger.warn("[Raidon] Invalid {} in {}. Expected compound or list NBT.", key, file.getFileName());
+            return List.of();
         } catch (CommandSyntaxException exception) {
             logger.warn("[Raidon] Invalid {} in {}: {}", key, file.getFileName(), exception.getMessage());
             return List.of();
@@ -919,6 +918,22 @@ public final class RaidConfigLoader {
             RaidFile.Action action = parseActionTag(root);
             if (action != null) {
                 parsed.add(action);
+            }
+        }
+        return List.copyOf(parsed);
+    }
+
+    private static List<RaidFile.Action> parseActionsFromNbtList(ListTag actions) {
+        if (actions == null || actions.isEmpty()) {
+            return List.of();
+        }
+        List<RaidFile.Action> parsed = new ArrayList<>();
+        for (int i = 0; i < actions.size(); i++) {
+            if (actions.get(i) instanceof CompoundTag actionTag) {
+                RaidFile.Action action = parseActionTag(actionTag);
+                if (action != null) {
+                    parsed.add(action);
+                }
             }
         }
         return List.copyOf(parsed);
@@ -1031,17 +1046,14 @@ public final class RaidConfigLoader {
             if (raw == null || raw.isBlank()) {
                 return null;
             }
-            try {
-                return RelaxedNbtParser.normalizeCompoundString(raw);
-            } catch (CommandSyntaxException exception) {
-                logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}): {}",
-                        mobType, waveIndex, file.getFileName(), exception.getMessage());
-                return null;
-            }
         }
-        logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}) - expected NBT string in 'nbt'",
-                mobType, waveIndex, file.getFileName());
-        return null;
+        try {
+            return RelaxedNbtParser.normalizeCompoundString(nbt);
+        } catch (CommandSyntaxException exception) {
+            logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}): {}",
+                    mobType, waveIndex, file.getFileName(), exception.getMessage());
+            return null;
+        }
     }
 
     private static boolean parseBooleanFlag(JsonElement value) {
