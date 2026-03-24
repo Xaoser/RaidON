@@ -31,7 +31,6 @@ import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
-import ru.xaoser.raidon.runtime.nbt.RaidNbtCompatibility;
 import ru.xaoser.raidon.runtime.nbt.RelaxedNbtParser;
 import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
@@ -328,16 +327,15 @@ class ActiveRaid implements RaidRuntime {
                     posNull++;
                     continue;
                 }
-                Mob mob = entry.type().create(level);
-                if (mob == null) {
+                SpawnedMob spawnedMob = createRaidMob(entry, pos, random);
+                if (spawnedMob == null) {
                     addFailed++;
                     continue;
                 }
                 created++;
-                applyMobNbt(mob, entry.nbtData());
-                applyDifficultyScaling(mob, entry);
+                Mob mob = spawnedMob.mob();
+                applyDifficultyScaling(mob, entry, spawnedMob.nbtHints());
                 applyMobTuning(mob, entry.tuning());
-                mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 mob.addTag(MobAiHelper.RAID_MOB_TAG);
                 UUID mobId = mob.getUUID();
@@ -346,7 +344,7 @@ class ActiveRaid implements RaidRuntime {
                     MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(),
                             raidTargetPoint, mobWanderRadius, spawnPoint);
                 }
-                if (level.addFreshEntity(mob)) {
+                if (level.tryAddFreshEntityWithPassengers(mob)) {
                     spawned.add(mobId);
                     spawnedCount++;
                     entry.decrement();
@@ -567,17 +565,54 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
-    private void applyDifficultyScaling(Mob mob, PendingSpawn entry) {
+    private SpawnedMob createRaidMob(PendingSpawn entry, BlockPos pos, RandomSource random) {
+        if (entry.nbtData() == null || entry.nbtData().isBlank()) {
+            Mob mob = entry.type().create(level);
+            if (mob == null) {
+                return null;
+            }
+            mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
+            return new SpawnedMob(mob, MobNbtHints.EMPTY);
+        }
+
+        try {
+            CompoundTag custom = RelaxedNbtParser.parseStrictCompound(entry.nbtData());
+            custom.putString("id", EntityType.getKey(entry.type()).toString());
+            MobNbtHints hints = inspectMobNbt(custom);
+            Entity entity = EntityType.loadEntityRecursive(custom, level, loaded -> {
+                loaded.moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, loaded.getYRot(), loaded.getXRot());
+                return loaded;
+            });
+            if (!(entity instanceof Mob mob)) {
+                if (entity != null) {
+                    entity.discard();
+                }
+                LOGGER.warn("[Raidon][{}] NBT spawn for {} did not create a mob instance", raid.id(), EntityType.getKey(entry.type()));
+                return null;
+            }
+            return new SpawnedMob(mob, hints);
+        } catch (CommandSyntaxException exception) {
+            LOGGER.warn("[Raidon][{}] Invalid exact mob NBT for type {}: {}", raid.id(),
+                    EntityType.getKey(entry.type()), exception.getMessage());
+            return null;
+        } catch (Exception exception) {
+            LOGGER.warn("[Raidon][{}] Failed to create mob from exact NBT for type {}", raid.id(),
+                    EntityType.getKey(entry.type()), exception);
+            return null;
+        }
+    }
+
+    private void applyDifficultyScaling(Mob mob, PendingSpawn entry, MobNbtHints nbtHints) {
         float multiplier = difficultyMultiplier(raid.difficulty());
         AttributeInstance health = mob.getAttribute(Attributes.MAX_HEALTH);
-        if (health != null) {
+        if (health != null && !nbtHints.explicitHealth()) {
             double baseHealth = health.getBaseValue();
             double scaledHealth = Math.max(1.0D, baseHealth * multiplier);
             health.setBaseValue(scaledHealth);
             mob.setHealth((float) scaledHealth);
         }
         AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
-        if (damage != null) {
+        if (damage != null && !nbtHints.explicitAttackDamage()) {
             double baseDamage = entry.baseDamage() != null ? entry.baseDamage() : damage.getBaseValue();
             double scaledDamage = Math.max(0.0D, baseDamage * multiplier);
             damage.setBaseValue(scaledDamage);
@@ -600,27 +635,38 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
-    private void applyMobNbt(Mob mob, String snbt) {
-        if (mob == null || snbt == null || snbt.isBlank()) {
-            return;
+    private MobNbtHints inspectMobNbt(CompoundTag tag) {
+        boolean explicitHealth = tag.contains("Health", Tag.TAG_ANY_NUMERIC)
+                || containsAttribute(tag, "minecraft:generic.max_health", "generic.max_health");
+        boolean explicitAttackDamage = containsAttribute(tag, "minecraft:generic.attack_damage", "generic.attack_damage");
+        return new MobNbtHints(explicitHealth, explicitAttackDamage);
+    }
+
+    private boolean containsAttribute(CompoundTag tag, String... names) {
+        if (tag == null) {
+            return false;
         }
-        try {
-            CompoundTag merged = mob.saveWithoutId(new CompoundTag());
-            CompoundTag custom = RaidNbtCompatibility.normalizeEntityData(RelaxedNbtParser.parseCompound(snbt));
-            custom.remove("id");
-            custom.remove("UUID");
-            custom.remove("Pos");
-            custom.remove("Motion");
-            custom.remove("Rotation");
-            custom.remove("Passengers");
-            merged.merge(custom);
-            mob.load(merged);
-        } catch (CommandSyntaxException exception) {
-            LOGGER.warn("[Raidon][{}] Invalid mob NBT for type {}: {}", raid.id(),
-                    EntityType.getKey(mob.getType()), exception.getMessage());
-        } catch (Exception exception) {
-            LOGGER.warn("[Raidon][{}] Failed to apply mob NBT for type {}", raid.id(), mob.getType(), exception);
+        if (tag.contains("Attributes", Tag.TAG_LIST) && containsAttribute(tag.getList("Attributes", Tag.TAG_COMPOUND), names)) {
+            return true;
         }
+        return tag.contains("attributes", Tag.TAG_LIST) && containsAttribute(tag.getList("attributes", Tag.TAG_COMPOUND), names);
+    }
+
+    private boolean containsAttribute(ListTag attributes, String... names) {
+        if (attributes == null || names == null) {
+            return false;
+        }
+        for (int index = 0; index < attributes.size(); index++) {
+            CompoundTag attribute = attributes.getCompound(index);
+            String name = attribute.contains("Name", Tag.TAG_STRING) ? attribute.getString("Name")
+                    : attribute.contains("id", Tag.TAG_STRING) ? attribute.getString("id") : "";
+            for (String expected : names) {
+                if (expected.equals(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void applyMobTuning(Mob mob, MobTraits tuning) {
@@ -834,6 +880,12 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private record LoopingSoundState(ResourceLocation soundId, SoundSource source, float volume, float pitch, int repeatTicks) {}
+
+    private record MobNbtHints(boolean explicitHealth, boolean explicitAttackDamage) {
+        private static final MobNbtHints EMPTY = new MobNbtHints(false, false);
+    }
+
+    private record SpawnedMob(Mob mob, MobNbtHints nbtHints) {}
 
     private record TrackedMobState(int waveIndex, int mobIndex) {}
 

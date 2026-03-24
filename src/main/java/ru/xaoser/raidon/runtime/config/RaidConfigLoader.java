@@ -1341,6 +1341,13 @@ public final class RaidConfigLoader {
             if (raw == null || raw.isBlank()) {
                 return null;
             }
+            try {
+                return RelaxedNbtParser.normalizeStrictCompoundString(raw);
+            } catch (CommandSyntaxException exception) {
+                logger.warn("[Raidon] Invalid exact summon-style NBT for mob '{}' in wave {} ({}): {}",
+                        mobType, waveIndex, file.getFileName(), exception.getMessage());
+                return null;
+            }
         }
         try {
             return RelaxedNbtParser.normalizeCompoundString(resolvedNbt);

@@ -58,6 +58,18 @@ public final class RelaxedNbtParser {
         throw syntax("Expected compound NBT");
     }
 
+    public static CompoundTag parseStrictCompound(String raw) throws CommandSyntaxException {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isBlank()) {
+            throw syntax("NBT value is blank");
+        }
+        Tag tag = TagParser.parseTag(value);
+        if (tag instanceof CompoundTag compoundTag) {
+            return compoundTag;
+        }
+        throw syntax("Expected compound NBT");
+    }
+
     public static CompoundTag parseCompound(JsonElement element) throws CommandSyntaxException {
         Tag tag = parseTag(element);
         if (tag instanceof CompoundTag compoundTag) {
@@ -68,6 +80,10 @@ public final class RelaxedNbtParser {
 
     public static String normalizeCompoundString(String raw) throws CommandSyntaxException {
         return parseCompound(raw).toString();
+    }
+
+    public static String normalizeStrictCompoundString(String raw) throws CommandSyntaxException {
+        return parseStrictCompound(raw).toString();
     }
 
     public static String normalizeCompoundString(JsonElement element) throws CommandSyntaxException {

@@ -206,13 +206,9 @@ What is supported now:
 - if you want force exact raw NBT in object mode, use:
   `{"$snbt":"[I;1,2,3,4]"}`
 - giant SNBT can be loaded from `@file:*.snbt`
-- newer item `components` are auto-converted for common 1.20.1 gear cases:
-  `minecraft:enchantments`
-  `minecraft:custom_name`
-  `minecraft:attribute_modifiers`
-  `minecraft:trim`
-  `minecraft:dyed_color`
-  `minecraft:profile`
+- raw string/file NBT now goes through exact summon-style compound parsing
+- if you want exact command syntax, use raw SNBT string or `.snbt` file
+- helper JSON object mode still exists, but exact behavior is raw SNBT mode
 
 ## Raid points
 - `mainpoint` = center of raid
@@ -427,10 +423,8 @@ Sound example:
 ```
 
 ## Custom sounds from config
-RaidON auto-loads client resources from:
-- `config/raidon/resources/`
-
-Folders are created automatically on client start.
+RaidON auto-loads client resources from: `config/raidon/resources/`
+folder is created automatically on client start.
 
 Minimal example:
 ```text
@@ -448,13 +442,13 @@ Example `sounds.json`:
 {
   "raid_start": {
     "sounds": [
-      "raidon_cfg:raid_start"
+      "raidon_sound:raid_start"
     ]
   },
   "raid_loop": {
     "sounds": [
       {
-        "name": "raidon_cfg:raid_loop",
+        "name": "raidon_sound:raid_loop",
         "stream": true
       }
     ]
@@ -464,8 +458,8 @@ Example `sounds.json`:
 
 Then in raid config just use:
 ```json
-{ "type": "sound", "sound": "raidon_cfg:raid_start", "sound_source": "master" }
-{ "type": "loop_sound", "sound": "raidon_cfg:raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
+{ "type": "sound", "sound": "raidon_sound:raid_start", "sound_source": "master" }
+{ "type": "loop_sound", "sound": "raidon_sound:raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
 ```
 
 Useful thing:
