@@ -319,6 +319,26 @@ public final class RaidManager {
         }
 
         @Override
+        public void sendActionBar(String msg) {
+        }
+
+        @Override
+        public void sendTitle(String msg, int fadeIn, int stay, int fadeOut) {
+        }
+
+        @Override
+        public void sendSubtitle(String msg, int fadeIn, int stay, int fadeOut) {
+        }
+
+        @Override
+        public void setRaidLoopSound(net.minecraft.resources.ResourceLocation soundId,
+                                     net.minecraft.sounds.SoundSource source,
+                                     float volume,
+                                     float pitch,
+                                     int repeatTicks) {
+        }
+
+        @Override
         public List<ServerPlayer> playersInRaidZone() {
             return List.of();
         }

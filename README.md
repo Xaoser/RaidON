@@ -329,16 +329,18 @@ NBT twins:
 Example:
 ```json
 "on_raid_start": [
-  { "type": "broadcast", "text": "Raid started!" },
-  { "type": "effect", "effect": "minecraft:resistance", "duration": 200, "amplifier": 0 },
-  { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 }
+  { "type": "chat", "text": "Raid started!" },
+  { "type": "title", "text": "Raid started!", "fade_in": 10, "stay": 70, "fade_out": 20 },
+  { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 },
+  { "type": "loop_sound", "sound": "minecraft:music_disc.13", "sound_source": "music", "repeat_ticks": 240 }
 ]
 ```
 
 Wave start example:
 ```json
 "on_start": [
-  { "type": "title", "text": "Wave 2" },
+  { "type": "subtitle", "text": "Wave 2", "fade_in": 10, "stay": 50, "fade_out": 20 },
+  { "type": "actionbar", "text": "Enemies incoming" },
   { "type": "sound", "sound": "minecraft:block.bell.use", "sound_source": "master", "volume": 1.0, "pitch": 1.1 }
 ]
 ```
@@ -365,21 +367,28 @@ Works for global and local mob drops
 
 ## Actions
 - `broadcast`
+- `chat`
+- `actionbar`
+- `subtitle`
+- `title`
 - `summon`
 - `command`
 - `set_time`
 - `lightning`
 - `effect`
 - `sound`
-- `title`
+- `loop_sound`
+- `raid_sound`
+- `music`
 
 Example:
 ```json
 "on_raid_end": [
-  { "type": "broadcast", "text": "Raid is over!" },
+  { "type": "chat", "text": "Raid is over!" },
   { "type": "summon", "summon": "minecraft:zombie", "value": 10 },
   { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 },
-  { "type": "sound", "sound": "minecraft:ui.toast.challenge_complete", "sound_source": "master", "volume": 1.0, "pitch": 1.0 }
+  { "type": "sound", "sound": "minecraft:ui.toast.challenge_complete", "sound_source": "master", "volume": 1.0, "pitch": 1.0 },
+  { "type": "title", "text": "Raid Complete" }
 ]
 ```
 
@@ -387,7 +396,14 @@ Sound example:
 ```json
 { "type": "sound", "sound": "minecraft:block.bell.use" }
 { "type": "sound", "sound": "minecraft:entity.wither.spawn", "sound_source": "hostile", "volume": 1.5, "pitch": 0.8 }
+{ "type": "loop_sound", "sound": "minecraft:music_disc.13", "sound_source": "music", "repeat_ticks": 240 }
 ```
+
+Text output types:
+- `chat` or `broadcast` = chat message
+- `actionbar` = text above hotbar
+- `subtitle` = smaller center text
+- `title` = main center text
 
 Lightning example:
 ```json

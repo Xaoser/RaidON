@@ -3,12 +3,15 @@ package ru.xaoser.raidon.runtime.raid;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -66,6 +69,8 @@ class ActiveRaid implements RaidRuntime {
     private boolean completed = false;
     private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
     private SpawnResult lastSpawnResult = SpawnResult.empty();
+    private LoopingSoundState loopingSound;
+    private long nextLoopSoundTick = Long.MIN_VALUE;
 
     ActiveRaid(Raid raid, ServerLevel level, BlockPos center, BlockPos spawnPoint, BlockPos raidTargetPoint, int mobWanderRadius, RaidSpawnSettings spawnSettings, RaidGuiSettings guiSettings) {
         this.raid = raid;
@@ -76,11 +81,13 @@ class ActiveRaid implements RaidRuntime {
         this.mobWanderRadius = Math.max(4, mobWanderRadius);
         this.spawnSettings = RaidSpawnSettings.sanitized(spawnSettings);
         this.guiSettings = guiSettings == null ? RaidGuiSettings.DEFAULT : guiSettings;
-        this.context = new BasicRaidContext(level, this.center, raid.difficulty(), Math.max(96.0D, spawnSettings.maxRadius() + 48.0D));
+        this.context = new BasicRaidContext(level, this.center, raid.difficulty(),
+                Math.max(96.0D, spawnSettings.maxRadius() + 48.0D), this::setLoopingSound);
     }
 
     void tick() {
         if (completed) return;
+        tickLoopingSound();
 
         if (currentWaveIndex < 0) {
             triggerRaidStart();
@@ -190,12 +197,13 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private BlockPos findSpawnPos(RandomSource random, int waveRadius) {
-        int minRadius = waveRadius > 0 ? waveRadius : spawnSettings.minRadius();
+        int minRadius = waveRadius > 0 ? 0 : spawnSettings.minRadius();
         int maxRadius = waveRadius > 0 ? waveRadius : spawnSettings.maxRadius();
+        maxRadius = Math.max(minRadius, maxRadius);
         int attempts = Math.max(1, spawnSettings.attemptsPerMob());
         for (int attempt = 0; attempt < attempts; attempt++) {
             double angle = random.nextDouble() * Math.PI * 2;
-            int radius = minRadius + random.nextInt(Math.max(1, maxRadius - minRadius + 1));
+            double radius = sampleSpawnRadius(random, minRadius, maxRadius);
             int dx = (int) Math.round(Math.cos(angle) * radius);
             int dz = (int) Math.round(Math.sin(angle) * radius);
             BlockPos rawCandidate = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spawnPoint.offset(dx, 0, dz));
@@ -212,6 +220,15 @@ class ActiveRaid implements RaidRuntime {
         }
 
         return null;
+    }
+
+    private static double sampleSpawnRadius(RandomSource random, int minRadius, int maxRadius) {
+        if (maxRadius <= minRadius) {
+            return minRadius;
+        }
+        double minSq = (double) minRadius * minRadius;
+        double maxSq = (double) maxRadius * maxRadius;
+        return Math.sqrt(minSq + random.nextDouble() * (maxSq - minSq));
     }
 
 
@@ -474,7 +491,53 @@ class ActiveRaid implements RaidRuntime {
             return;
         }
         completed = true;
+        clearLoopingSound();
         raid.endAction().run(context);
+    }
+
+    private void setLoopingSound(ResourceLocation soundId, SoundSource source, float volume, float pitch, int repeatTicks) {
+        if (soundId == null) {
+            return;
+        }
+        loopingSound = new LoopingSoundState(soundId, source == null ? SoundSource.MASTER : source,
+                clampFloat(volume, 0.0F, 64.0F), clampFloat(pitch, 0.0F, 4.0F), Math.max(20, repeatTicks));
+        playLoopingSoundNow();
+        nextLoopSoundTick = level.getGameTime() + loopingSound.repeatTicks();
+    }
+
+    private void tickLoopingSound() {
+        if (loopingSound == null || !raidStarted) {
+            return;
+        }
+        if (level.getGameTime() < nextLoopSoundTick) {
+            return;
+        }
+        playLoopingSoundNow();
+        nextLoopSoundTick = level.getGameTime() + loopingSound.repeatTicks();
+    }
+
+    private void playLoopingSoundNow() {
+        if (loopingSound == null || !BuiltInRegistries.SOUND_EVENT.containsKey(loopingSound.soundId())) {
+            return;
+        }
+        SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(loopingSound.soundId());
+        List<ServerPlayer> players = context.playersInRaidZone();
+        if (!players.isEmpty()) {
+            for (ServerPlayer player : players) {
+                player.playNotifySound(sound, loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
+            }
+            return;
+        }
+        level.playSound(null, center, sound, loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
+    }
+
+    private void clearLoopingSound() {
+        loopingSound = null;
+        nextLoopSoundTick = Long.MIN_VALUE;
+    }
+
+    private static float clampFloat(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void dropLoot(List<DropEntry> drops, BlockPos pos, RandomSource random) {
@@ -579,6 +642,16 @@ class ActiveRaid implements RaidRuntime {
         tag.putInt("currentWaveIndex", currentWaveIndex);
         tag.putInt("remainingRespawnAttempts", remainingRespawnAttempts);
         tag.putBoolean("raidStarted", raidStarted);
+        if (loopingSound != null) {
+            CompoundTag sound = new CompoundTag();
+            sound.putString("sound", loopingSound.soundId().toString());
+            sound.putString("source", loopingSound.source().name());
+            sound.putFloat("volume", loopingSound.volume());
+            sound.putFloat("pitch", loopingSound.pitch());
+            sound.putInt("repeatTicks", loopingSound.repeatTicks());
+            sound.putLong("nextTick", nextLoopSoundTick);
+            tag.put("loopingSound", sound);
+        }
 
         ListTag tracked = new ListTag();
         for (Map.Entry<UUID, TrackedMobState> entry : trackedMobStates.entrySet()) {
@@ -618,6 +691,7 @@ class ActiveRaid implements RaidRuntime {
         remainingRespawnAttempts = tag.contains("remainingRespawnAttempts", Tag.TAG_INT)
                 ? tag.getInt("remainingRespawnAttempts")
                 : MAX_RESPAWN_ATTEMPTS;
+        restoreLoopingSound(tag);
         waveMobs.clear();
         pendingMobs.clear();
         trackedMobStates.clear();
@@ -702,6 +776,36 @@ class ActiveRaid implements RaidRuntime {
                 && state.mobIndex() < raid.waves().get(state.waveIndex()).mobs().size();
     }
 
+    private void restoreLoopingSound(CompoundTag tag) {
+        clearLoopingSound();
+        if (!tag.contains("loopingSound", Tag.TAG_COMPOUND)) {
+            return;
+        }
+        CompoundTag sound = tag.getCompound("loopingSound");
+        ResourceLocation soundId = ResourceLocation.tryParse(sound.getString("sound"));
+        if (soundId == null) {
+            return;
+        }
+        SoundSource source = parseStoredSoundSource(sound.getString("source"));
+        float volume = sound.contains("volume", Tag.TAG_FLOAT) ? sound.getFloat("volume") : 1.0F;
+        float pitch = sound.contains("pitch", Tag.TAG_FLOAT) ? sound.getFloat("pitch") : 1.0F;
+        int repeatTicks = sound.contains("repeatTicks", Tag.TAG_INT) ? sound.getInt("repeatTicks") : 200;
+        loopingSound = new LoopingSoundState(soundId, source, clampFloat(volume, 0.0F, 64.0F),
+                clampFloat(pitch, 0.0F, 4.0F), Math.max(20, repeatTicks));
+        nextLoopSoundTick = sound.contains("nextTick", Tag.TAG_LONG) ? sound.getLong("nextTick") : level.getGameTime();
+    }
+
+    private static SoundSource parseStoredSoundSource(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return SoundSource.MASTER;
+        }
+        try {
+            return SoundSource.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            return SoundSource.MASTER;
+        }
+    }
+
     private MobEntry mobEntry(TrackedMobState state) {
         return raid.waves().get(state.waveIndex()).mobs().get(state.mobIndex());
     }
@@ -724,6 +828,8 @@ class ActiveRaid implements RaidRuntime {
             return new SpawnResult(0, 0, 0, 0, 0);
         }
     }
+
+    private record LoopingSoundState(ResourceLocation soundId, SoundSource source, float volume, float pitch, int repeatTicks) {}
 
     private record TrackedMobState(int waveIndex, int mobIndex) {}
 

@@ -21,7 +21,6 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraft.network.chat.Component;
 import net.minecraft.commands.CommandSourceStack;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
@@ -351,7 +350,7 @@ public final class RaidConfigLoader {
                     continue;
                 }
                 switch (action.type().toLowerCase()) {
-                    case "broadcast" -> {
+                    case "broadcast", "chat", "message" -> {
                         if (action.text() != null) ctx.broadcast(action.text());
                     }
                     case "summon" -> {
@@ -394,11 +393,24 @@ public final class RaidConfigLoader {
                         }
                     }
                     case "sound", "playsound" -> playSound(ctx, action);
+                    case "loop_sound", "raid_sound", "music" -> startLoopSound(ctx, action);
+                    case "actionbar" -> {
+                        if (action.text() != null) ctx.sendActionBar(action.text());
+                    }
+                    case "subtitle" -> {
+                        if (action.text() != null) {
+                            ctx.sendSubtitle(action.text(),
+                                    action.fade_in() == null ? 0 : action.fade_in(),
+                                    action.stay() == null ? 0 : action.stay(),
+                                    action.fade_out() == null ? 0 : action.fade_out());
+                        }
+                    }
                     case "title" -> {
-                        if (action.text() == null) break;
-                        Component title = Component.literal(action.text());
-                        for (var player : ctx.playersInRaidZone()) {
-                            player.displayClientMessage(title, true);
+                        if (action.text() != null) {
+                            ctx.sendTitle(action.text(),
+                                    action.fade_in() == null ? 0 : action.fade_in(),
+                                    action.stay() == null ? 0 : action.stay(),
+                                    action.fade_out() == null ? 0 : action.fade_out());
                         }
                     }
                     default -> {
@@ -429,6 +441,21 @@ public final class RaidConfigLoader {
         }
         BlockPos pos = ctx.center();
         ctx.level().playSound(null, pos, sound, source, volume, pitch);
+    }
+
+    private static void startLoopSound(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
+        if (action.sound() == null || action.sound().isBlank()) {
+            return;
+        }
+        ResourceLocation soundId = ResourceLocation.tryParse(action.sound());
+        if (soundId == null || !BuiltInRegistries.SOUND_EVENT.containsKey(soundId)) {
+            return;
+        }
+        SoundSource source = parseSoundSource(action.sound_source());
+        float volume = clampFloat(action.volume() == null ? 1.0F : action.volume(), 0.0F, 64.0F);
+        float pitch = clampFloat(action.pitch() == null ? 1.0F : action.pitch(), 0.0F, 4.0F);
+        int repeatTicks = Math.max(20, action.repeat_ticks() == null ? 200 : action.repeat_ticks());
+        ctx.setRaidLoopSound(soundId, source, volume, pitch, repeatTicks);
     }
 
     private static SoundSource parseSoundSource(String raw) {
@@ -624,7 +651,11 @@ public final class RaidConfigLoader {
                              String effect, Integer duration, Integer amplifier, String sound,
                              @SerializedName(value = "sound_source", alternate = {"soundSource"}) String sound_source,
                              Float volume, Float pitch, String target, String entity, String block,
-                             Integer x, Integer y, Integer z, Integer radius) {}
+                             Integer x, Integer y, Integer z, Integer radius,
+                             @SerializedName(value = "fade_in", alternate = {"fadeIn"}) Integer fade_in,
+                             Integer stay,
+                             @SerializedName(value = "fade_out", alternate = {"fadeOut"}) Integer fade_out,
+                             @SerializedName(value = "repeat_ticks", alternate = {"repeatTicks"}) Integer repeat_ticks) {}
 
         public record Drops(List<Drop> global) {}
 
@@ -943,7 +974,8 @@ public final class RaidConfigLoader {
         if (type == RaidStartSettings.CenterType.STRUCTURE && structure == null && fallbackStructure == null) {
             logger.warn("[Raidon] {} in {} uses structure center but structure is missing", key, file.getFileName());
         }
-        return new RaidStartSettings.Center(type, structure, getTagInt(center, "search_radius"), getTagBoolean(center, "prefer_nearest"));
+        return new RaidStartSettings.Center(type, structure, getTagIntAny(center, "search_radius", "searchRadius"),
+                getTagBooleanAny(center, "prefer_nearest", "preferNearest"));
     }
 
     private static RaidStartSettings.CenterType parseStartCenterType(String raw, Logger logger, Path file, String key) {
@@ -1098,7 +1130,7 @@ public final class RaidConfigLoader {
                 getOptionalInt(tag, "duration"),
                 getOptionalInt(tag, "amplifier"),
                 getTagString(tag, "sound"),
-                getTagString(tag, "sound_source"),
+                getTagStringAny(tag, "sound_source", "soundSource"),
                 getOptionalFloat(tag, "volume"),
                 getOptionalFloat(tag, "pitch"),
                 getTagString(tag, "target"),
@@ -1107,7 +1139,11 @@ public final class RaidConfigLoader {
                 getOptionalInt(tag, "x"),
                 getOptionalInt(tag, "y"),
                 getOptionalInt(tag, "z"),
-                getOptionalInt(tag, "radius")
+                getOptionalInt(tag, "radius"),
+                getOptionalIntAny(tag, "fade_in", "fadeIn"),
+                getOptionalInt(tag, "stay"),
+                getOptionalIntAny(tag, "fade_out", "fadeOut"),
+                getOptionalIntAny(tag, "repeat_ticks", "repeatTicks")
         );
     }
 
@@ -1174,8 +1210,33 @@ public final class RaidConfigLoader {
         return value == null || value.isBlank() ? null : value;
     }
 
+    private static String getTagStringAny(CompoundTag tag, String... keys) {
+        if (keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            String value = getTagString(tag, key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private static int getTagInt(CompoundTag tag, String key) {
         return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getInt(key) : 0;
+    }
+
+    private static int getTagIntAny(CompoundTag tag, String... keys) {
+        if (keys == null) {
+            return 0;
+        }
+        for (String key : keys) {
+            if (tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC)) {
+                return tag.getInt(key);
+            }
+        }
+        return 0;
     }
 
     private static long getTagLong(CompoundTag tag, String key) {
@@ -1186,8 +1247,32 @@ public final class RaidConfigLoader {
         return tag != null && tag.contains(key, Tag.TAG_BYTE) && tag.getBoolean(key);
     }
 
+    private static boolean getTagBooleanAny(CompoundTag tag, String... keys) {
+        if (keys == null) {
+            return false;
+        }
+        for (String key : keys) {
+            if (tag != null && tag.contains(key, Tag.TAG_BYTE)) {
+                return tag.getBoolean(key);
+            }
+        }
+        return false;
+    }
+
     private static Integer getOptionalInt(CompoundTag tag, String key) {
         return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getInt(key) : null;
+    }
+
+    private static Integer getOptionalIntAny(CompoundTag tag, String... keys) {
+        if (keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC)) {
+                return tag.getInt(key);
+            }
+        }
+        return null;
     }
 
     private static Long getOptionalLong(CompoundTag tag, String key) {
