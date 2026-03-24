@@ -23,7 +23,7 @@ public final class RaidTextFormatter {
             return json;
         }
 
-        MutableComponent root = Component.empty();
+        MutableComponent root = null;
         Style style = Style.EMPTY;
         StringBuilder buffer = new StringBuilder();
 
@@ -32,7 +32,7 @@ public final class RaidTextFormatter {
             if ((current == '&' || current == '\u00A7') && index + 1 < raw.length()) {
                 String hex = tryReadHexColor(raw, index + 1);
                 if (hex != null) {
-                    appendSegment(root, buffer, style);
+                    root = appendSegment(root, buffer, style);
                     style = Style.EMPTY.withColor(TextColor.fromRgb(Integer.parseInt(hex, 16)));
                     index += 7;
                     continue;
@@ -40,7 +40,7 @@ public final class RaidTextFormatter {
 
                 ChatFormatting formatting = ChatFormatting.getByCode(raw.charAt(index + 1));
                 if (formatting != null) {
-                    appendSegment(root, buffer, style);
+                    root = appendSegment(root, buffer, style);
                     style = applyFormatting(style, formatting);
                     index++;
                     continue;
@@ -49,8 +49,8 @@ public final class RaidTextFormatter {
             buffer.append(current);
         }
 
-        appendSegment(root, buffer, style);
-        return root;
+        root = appendSegment(root, buffer, style);
+        return root == null ? Component.empty() : root;
     }
 
     @Nullable
@@ -100,11 +100,17 @@ public final class RaidTextFormatter {
         return style.applyFormat(formatting);
     }
 
-    private static void appendSegment(MutableComponent root, StringBuilder buffer, Style style) {
+    private static MutableComponent appendSegment(MutableComponent root, StringBuilder buffer, Style style) {
         if (buffer.isEmpty()) {
-            return;
+            return root;
         }
-        root.append(Component.literal(buffer.toString()).setStyle(style));
+        MutableComponent segment = Component.literal(buffer.toString()).setStyle(style);
+        if (root == null) {
+            root = segment;
+        } else {
+            root.append(segment);
+        }
         buffer.setLength(0);
+        return root;
     }
 }
