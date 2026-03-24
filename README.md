@@ -110,8 +110,16 @@ If you want use NBT style config, just write:
   "id": "raidon:nbt_test",
   "nbt_system": "true",
   "start_nbt": "{event:on_kill, entity:minecraft:zombie, cooldown_ticks:200}",
+  "on_raid_start_nbt": [
+    { "type": "broadcast", "text": "raid started" },
+    { "type": "sound", "sound": "minecraft:entity.ender_dragon.growl", "volume": 1.2, "pitch": 1.0 }
+  ],
   "waves": [
     {
+      "on_start_nbt": [
+        { "type": "effect", "effect": "minecraft:speed", "duration": 200, "amplifier": 0 },
+        { "type": "sound", "sound": "minecraft:block.bell.use", "sound_source": "master" }
+      ],
       "mobs": [
         {
           "type": "minecraft:zombie",
@@ -147,7 +155,7 @@ If you do not want escape previous style, you can write same thing as JSON objec
 }
 ```
 
-For end actions you can use object, SNBT string, or just list:
+For start/end actions you can use object, SNBT string, or just list:
 ```json
 "on_end_nbt": [
   { "type": "broadcast", "text": "wave finished now" },
@@ -159,6 +167,7 @@ What is supported now:
 - exact SNBT like in `/summon`
 - JSON object to NBT convert
 - JSON array to NBT list convert
+- raid start / wave start / wave end / raid end actions in NBT mode
 - relaxed simple strings in SNBT:
   `text:raid finished now` works
   `entity:minecraft:zombie` works
@@ -219,6 +228,36 @@ Extra fields:
 - `cooldown_ticks` = delay between auto starts
 - `value` = extra numeric value for trigger
 
+## Event actions
+You can run actions on:
+- `on_raid_start`
+- `on_start`
+- `on_end`
+- `on_raid_end`
+
+NBT twins:
+- `on_raid_start_nbt`
+- `on_start_nbt`
+- `on_end_nbt`
+- `on_raid_end_nbt`
+
+Example:
+```json
+"on_raid_start": [
+  { "type": "broadcast", "text": "Raid started!" },
+  { "type": "effect", "effect": "minecraft:resistance", "duration": 200, "amplifier": 0 },
+  { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 }
+]
+```
+
+Wave start example:
+```json
+"on_start": [
+  { "type": "title", "text": "Wave 2" },
+  { "type": "sound", "sound": "minecraft:block.bell.use", "sound_source": "master", "volume": 1.0, "pitch": 1.1 }
+]
+```
+
 ## Mob traits
 You can tune mobs with `traits`:
 - `burn_in_sun`
@@ -239,13 +278,14 @@ This is useful if you want control mob logic from your own mod code.
 
 Works for global and local mob drops
 
-## End actions
+## Actions
 - `broadcast`
 - `summon`
 - `command`
 - `set_time`
 - `lightning`
 - `effect`
+- `sound`
 - `title`
 
 Example:
@@ -253,8 +293,15 @@ Example:
 "on_raid_end": [
   { "type": "broadcast", "text": "Raid is over!" },
   { "type": "summon", "summon": "minecraft:zombie", "value": 10 },
-  { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 }
+  { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 },
+  { "type": "sound", "sound": "minecraft:ui.toast.challenge_complete", "sound_source": "master", "volume": 1.0, "pitch": 1.0 }
 ]
+```
+
+Sound example:
+```json
+{ "type": "sound", "sound": "minecraft:block.bell.use" }
+{ "type": "sound", "sound": "minecraft:entity.wither.spawn", "sound_source": "hostile", "volume": 1.5, "pitch": 0.8 }
 ```
 
 Lightning example:

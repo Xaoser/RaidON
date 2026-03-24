@@ -10,13 +10,15 @@ public final class Raid {
     private final ResourceLocation id;
     private final List<RaidWave> waves;
     private final float difficulty;
+    private final RaidAction startAction;
     private final RaidAction endAction;
     private final List<DropEntry> globalDrops;
 
-    public Raid(ResourceLocation id, List<RaidWave> waves, float difficulty, RaidAction endAction, List<DropEntry> globalDrops) {
+    public Raid(ResourceLocation id, List<RaidWave> waves, float difficulty, RaidAction startAction, RaidAction endAction, List<DropEntry> globalDrops) {
         this.id = id;
         this.waves = List.copyOf(waves);
         this.difficulty = difficulty;
+        this.startAction = startAction;
         this.endAction = endAction;
         this.globalDrops = globalDrops == null ? List.of() : List.copyOf(globalDrops);
     }
@@ -24,6 +26,7 @@ public final class Raid {
     public ResourceLocation id() { return id; }
     public List<RaidWave> waves() { return waves; }
     public float difficulty() { return difficulty; }
+    public RaidAction startAction() { return startAction; }
     public RaidAction endAction() { return endAction; }
     public List<DropEntry> globalDrops() { return globalDrops; }
 }

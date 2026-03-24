@@ -13,6 +13,8 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
@@ -214,6 +216,8 @@ public final class RaidConfigLoader {
             RaidPointSettings pointSettings = parsePointSettings(model.points(), logger, file);
             RaidGuiSettings guiSettings = parseGuiSettings(model.gui(), logger, file);
             RaidStartSettings startSettings = parseStartSettings(model.start(), model.start_nbt(), nbtSystemEnabled, logger, file);
+            List<RaidFile.Action> raidStartActions = resolveActions(model.on_raid_start(), model.on_raid_start_nbt(),
+                    nbtSystemEnabled, logger, file, "on_raid_start_nbt");
             List<RaidFile.Action> raidEndActions = resolveActions(model.on_raid_end(), model.on_raid_end_nbt(),
                     nbtSystemEnabled, logger, file, "on_raid_end_nbt");
 
@@ -227,6 +231,7 @@ public final class RaidConfigLoader {
 
             RaidBuilder builder = new RaidBuilder(id)
                     .difficulty((float) model.difficulty())
+                    .startAction(buildActions(raidStartActions))
                     .endAction(buildActions(raidEndActions))
                     .globalDrops(globalDrops);
 
@@ -286,8 +291,13 @@ public final class RaidConfigLoader {
 
                     wb.completeWhenAllDead();
 
+                    List<RaidFile.Action> waveStartActions = resolveActions(wave.on_start(), wave.on_start_nbt(),
+                            nbtSystemEnabled, logger, file, "waves[" + waveIndex + "].on_start_nbt");
                     List<RaidFile.Action> waveEndActions = resolveActions(wave.on_end(), wave.on_end_nbt(),
                             nbtSystemEnabled, logger, file, "waves[" + waveIndex + "].on_end_nbt");
+                    if (!waveStartActions.isEmpty()) {
+                        wb.onWaveStart(buildActions(waveStartActions));
+                    }
                     if (!waveEndActions.isEmpty()) {
                         wb.onWaveEnd(buildActions(waveEndActions));
                     }
@@ -370,6 +380,7 @@ public final class RaidConfigLoader {
                             player.addEffect(new MobEffectInstance(effect, duration, amplifier));
                         }
                     }
+                    case "sound", "playsound" -> playSound(ctx, action);
                     case "title" -> {
                         if (action.text() == null) break;
                         Component title = Component.literal(action.text());
@@ -381,6 +392,49 @@ public final class RaidConfigLoader {
                     }
                 }
             }
+        };
+    }
+
+    private static void playSound(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
+        if (action.sound() == null || action.sound().isBlank()) {
+            return;
+        }
+        ResourceLocation soundId = ResourceLocation.tryParse(action.sound());
+        if (soundId == null || !BuiltInRegistries.SOUND_EVENT.containsKey(soundId)) {
+            return;
+        }
+        SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(soundId);
+        SoundSource source = parseSoundSource(action.sound_source());
+        float volume = clampFloat(action.volume() == null ? 1.0F : action.volume(), 0.0F, 64.0F);
+        float pitch = clampFloat(action.pitch() == null ? 1.0F : action.pitch(), 0.0F, 4.0F);
+        List<net.minecraft.server.level.ServerPlayer> players = ctx.playersInRaidZone();
+        if (!players.isEmpty()) {
+            for (var player : players) {
+                player.playNotifySound(sound, source, volume, pitch);
+            }
+            return;
+        }
+        BlockPos pos = ctx.center();
+        ctx.level().playSound(null, pos, sound, source, volume, pitch);
+    }
+
+    private static SoundSource parseSoundSource(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return SoundSource.MASTER;
+        }
+        String normalized = raw.trim().toLowerCase().replace('-', '_');
+        return switch (normalized) {
+            case "master" -> SoundSource.MASTER;
+            case "music" -> SoundSource.MUSIC;
+            case "record", "records" -> SoundSource.RECORDS;
+            case "weather" -> SoundSource.WEATHER;
+            case "block", "blocks" -> SoundSource.BLOCKS;
+            case "hostile" -> SoundSource.HOSTILE;
+            case "neutral" -> SoundSource.NEUTRAL;
+            case "player", "players" -> SoundSource.PLAYERS;
+            case "ambient" -> SoundSource.AMBIENT;
+            case "voice" -> SoundSource.VOICE;
+            default -> SoundSource.MASTER;
         };
     }
 
@@ -494,6 +548,8 @@ public final class RaidConfigLoader {
             Spawn spawn,
             @SerializedName(value = "GUI", alternate = {"gui"}) Gui gui,
             List<Wave> waves,
+            @SerializedName(value = "on_raid_start", alternate = {"onRaidStart"}) List<Action> on_raid_start,
+            @SerializedName(value = "on_raid_start_nbt", alternate = {"onRaidStartNbt"}) JsonElement on_raid_start_nbt,
             List<Action> on_raid_end,
             @SerializedName(value = "on_raid_end_nbt", alternate = {"onRaidEndNbt"}) JsonElement on_raid_end_nbt
     ) {
@@ -526,11 +582,14 @@ public final class RaidConfigLoader {
 
         public record Gui(String main, String progress, JsonElement size) {}
 
-        public record Wave(List<Mob> mobs, Completion complete, List<Action> on_end,
+        public record Wave(List<Mob> mobs, Completion complete,
+                           @SerializedName(value = "on_start", alternate = {"onWaveStart"}) List<Action> on_start,
+                           @SerializedName(value = "on_start_nbt", alternate = {"onStartNbt"}) JsonElement on_start_nbt,
+                           List<Action> on_end,
                            @SerializedName(value = "on_end_nbt", alternate = {"onEndNbt"}) JsonElement on_end_nbt,
                            int spawn_radius) {
             public Wave(List<Mob> mobs, Completion complete, List<Action> on_end) {
-                this(mobs, complete, on_end, null, 0);
+                this(mobs, complete, null, null, on_end, null, 0);
             }
         }
 
@@ -542,7 +601,11 @@ public final class RaidConfigLoader {
             }
         }
 
-        public record Action(String type, String text, String summon, Integer value, String command, Long time, String effect, Integer duration, Integer amplifier, String target, String entity, String block, Integer x, Integer y, Integer z, Integer radius) {}
+        public record Action(String type, String text, String summon, Integer value, String command, Long time,
+                             String effect, Integer duration, Integer amplifier, String sound,
+                             @SerializedName(value = "sound_source", alternate = {"soundSource"}) String sound_source,
+                             Float volume, Float pitch, String target, String entity, String block,
+                             Integer x, Integer y, Integer z, Integer radius) {}
 
         public record Drops(List<Drop> global) {}
 
@@ -954,6 +1017,10 @@ public final class RaidConfigLoader {
                 getTagString(tag, "effect"),
                 getOptionalInt(tag, "duration"),
                 getOptionalInt(tag, "amplifier"),
+                getTagString(tag, "sound"),
+                getTagString(tag, "sound_source"),
+                getOptionalFloat(tag, "volume"),
+                getOptionalFloat(tag, "pitch"),
                 getTagString(tag, "target"),
                 getTagString(tag, "entity"),
                 getTagString(tag, "block"),
@@ -1013,6 +1080,14 @@ public final class RaidConfigLoader {
 
     private static Long getOptionalLong(CompoundTag tag, String key) {
         return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getLong(key) : null;
+    }
+
+    private static Float getOptionalFloat(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getFloat(key) : null;
+    }
+
+    private static float clampFloat(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static MobTraits parseMobTuning(JsonElement traits) {

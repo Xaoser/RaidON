@@ -62,6 +62,7 @@ class ActiveRaid implements RaidRuntime {
     private final Map<UUID, TrackedMobState> trackedMobStates = new HashMap<>();
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
+    private boolean raidStarted = false;
     private boolean completed = false;
     private int remainingRespawnAttempts = MAX_RESPAWN_ATTEMPTS;
     private SpawnResult lastSpawnResult = SpawnResult.empty();
@@ -82,6 +83,7 @@ class ActiveRaid implements RaidRuntime {
         if (completed) return;
 
         if (currentWaveIndex < 0) {
+            triggerRaidStart();
             startWave(0);
             sendProgressIfNeeded();
             return;
@@ -119,6 +121,14 @@ class ActiveRaid implements RaidRuntime {
     @Override
     public int aliveMobsInCurrentWave() {
         return waveMobs.getOrDefault(currentWaveIndex, List.of()).size();
+    }
+
+    void triggerRaidStart() {
+        if (raidStarted) {
+            return;
+        }
+        raidStarted = true;
+        raid.startAction().run(context);
     }
 
     private void startWave(int waveIndex) {
@@ -568,6 +578,7 @@ class ActiveRaid implements RaidRuntime {
         tag.putInt("mobWanderRadius", mobWanderRadius);
         tag.putInt("currentWaveIndex", currentWaveIndex);
         tag.putInt("remainingRespawnAttempts", remainingRespawnAttempts);
+        tag.putBoolean("raidStarted", raidStarted);
 
         ListTag tracked = new ListTag();
         for (Map.Entry<UUID, TrackedMobState> entry : trackedMobStates.entrySet()) {
@@ -601,6 +612,9 @@ class ActiveRaid implements RaidRuntime {
         }
 
         currentWaveIndex = waveIndex;
+        raidStarted = tag.contains("raidStarted", Tag.TAG_BYTE)
+                ? tag.getBoolean("raidStarted")
+                : currentWaveIndex >= 0;
         remainingRespawnAttempts = tag.contains("remainingRespawnAttempts", Tag.TAG_INT)
                 ? tag.getInt("remainingRespawnAttempts")
                 : MAX_RESPAWN_ATTEMPTS;

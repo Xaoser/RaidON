@@ -76,6 +76,7 @@ public final class RaidManager {
                 points.mobWanderRadius(), loaded.spawnSettings(), loaded.guiSettings());
         ACTIVE.put(id, active);
         ACTIVE_TICK_ORDER.add(id);
+        active.triggerRaidStart();
         persistActiveState(level.getServer());
         LOGGER.info("Started raid {} center={} spawn={} target={} wanderRadius={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(), points.mobWanderRadius());
         sendProgress(active, false);

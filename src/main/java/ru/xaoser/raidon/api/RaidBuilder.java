@@ -18,6 +18,7 @@ public final class RaidBuilder {
     private final Map<Integer, WaveBuilder> waves = new TreeMap<>();
 
     private float difficulty = 0.0F;
+    private RaidAction startAction = ctx -> {};
     private RaidAction endAction = ctx -> {};
     private List<DropEntry> globalDrops = List.of();
 
@@ -64,6 +65,12 @@ public final class RaidBuilder {
         return this;
     }
 
+    /** Sets the action that runs when the raid starts. */
+    public RaidBuilder startAction(RaidAction action) {
+        this.startAction = Objects.requireNonNull(action, "action");
+        return this;
+    }
+
     /** Sets the action that runs after the raid ends. */
     public RaidBuilder endAction(RaidAction action) {
         this.endAction = Objects.requireNonNull(action, "action");
@@ -86,7 +93,7 @@ public final class RaidBuilder {
             builtWaves.add(entry.getValue().build());
         }
 
-        return new Raid(id, builtWaves, difficulty, endAction, globalDrops);
+        return new Raid(id, builtWaves, difficulty, startAction, endAction, globalDrops);
     }
 
     private static float clamp(float v, float min, float max) {
