@@ -1,4 +1,5 @@
 {
+  "raidon.hud.raid": "RAID",
   "raidon.hud.wave": "Wave %s/%s",
   "raidon.hud.mobs": "Mobs left: %s/%s",
   "raidon.command.start.busy": "Area is busy, raid is cancelled",

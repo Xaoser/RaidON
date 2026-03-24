@@ -23,6 +23,7 @@ import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.RaidContext;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
+import ru.xaoser.raidon.runtime.text.RaidTextFormatter;
 
 import java.util.*;
 
@@ -315,7 +316,7 @@ public final class RaidManager {
             double radius = 64.0D;
             double distSqr = radius * radius;
             level.getPlayers(player -> player.distanceToSqr(centerVec) <= distSqr)
-                    .forEach(player -> player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg)));
+                    .forEach(player -> player.sendSystemMessage(RaidTextFormatter.parse(msg)));
         }
 
         @Override

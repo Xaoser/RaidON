@@ -109,6 +109,15 @@ GUI texture path can be:
 - `raidon:gui/file.png`
 - `raidon/gui/file.png`
 
+GUI progress bar names:
+- `main` = legacy empty bar texture
+- `progress` = legacy full bar texture
+- `progress_empty` = empty bar texture
+- `progress_full` = full bar texture
+
+If custom bar textures are set, RaidON hides only old black background.
+Texts and progress stay visible.
+
 ## NBT system example
 If you want use NBT style config, just write:
 ```json
@@ -145,6 +154,16 @@ If you want full summon-style NBT, just write normal SNBT string like in command
 ```json
 "nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
 ```
+
+If this thing is gigantic, use `.snbt` file:
+```json
+"nbt": "@file:bosses/raid_archer.snbt"
+```
+
+Where file will be searched:
+- near current raid json
+- then in `config/raidon/nbt/`
+- absolute path also works
 
 If you do not want escape previous style, you can write same thing as JSON object:
 ```json
@@ -186,6 +205,14 @@ What is supported now:
   `"1b"`, `"20s"`, `"40.0f"`, `"[I;1,2,3,4]"`
 - if you want force exact raw NBT in object mode, use:
   `{"$snbt":"[I;1,2,3,4]"}`
+- giant SNBT can be loaded from `@file:*.snbt`
+- newer item `components` are auto-converted for common 1.20.1 gear cases:
+  `minecraft:enchantments`
+  `minecraft:custom_name`
+  `minecraft:attribute_modifiers`
+  `minecraft:trim`
+  `minecraft:dyed_color`
+  `minecraft:profile`
 
 ## Raid points
 - `mainpoint` = center of raid
@@ -329,8 +356,8 @@ NBT twins:
 Example:
 ```json
 "on_raid_start": [
-  { "type": "chat", "text": "Raid started!" },
-  { "type": "title", "text": "Raid started!", "fade_in": 10, "stay": 70, "fade_out": 20 },
+  { "type": "chat", "text": "&cRaid started!" },
+  { "type": "title", "text": "&6&lRaid started!", "fade_in": 10, "stay": 70, "fade_out": 20 },
   { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 },
   { "type": "loop_sound", "sound": "minecraft:music_disc.13", "sound_source": "music", "repeat_ticks": 240 }
 ]
@@ -399,6 +426,73 @@ Sound example:
 { "type": "loop_sound", "sound": "minecraft:music_disc.13", "sound_source": "music", "repeat_ticks": 240 }
 ```
 
+## Custom sounds from config
+RaidON auto-loads client resources from:
+- `config/raidon/resources/`
+
+Folders are created automatically on client start.
+
+Minimal example:
+```text
+config/raidon/resources/
+└── assets/
+    └── raidon_cfg/
+        ├── sounds.json
+        └── sounds/
+            ├── raid_start.ogg
+            └── raid_loop.ogg
+```
+
+Example `sounds.json`:
+```json
+{
+  "raid_start": {
+    "sounds": [
+      "raidon_cfg:raid_start"
+    ]
+  },
+  "raid_loop": {
+    "sounds": [
+      {
+        "name": "raidon_cfg:raid_loop",
+        "stream": true
+      }
+    ]
+  }
+}
+```
+
+Then in raid config just use:
+```json
+{ "type": "sound", "sound": "raidon_cfg:raid_start", "sound_source": "master" }
+{ "type": "loop_sound", "sound": "raidon_cfg:raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
+```
+
+Useful thing:
+- after changing `.ogg` or `sounds.json`, do `F3+T` or restart client
+- vanilla ids and custom ids work the same way
+
+## Text colors
+Raid text supports legacy formatting codes:
+- colors: `&0` ... `&f`
+- styles: `&l`, `&n`, `&o`, `&m`, `&k`
+- reset: `&r`
+- hex: `&#FF0000`
+
+Works in:
+- `chat`
+- `actionbar`
+- `subtitle`
+- `title`
+
+Example:
+```json
+{ "type": "chat", "text": "&6Raid &cstarted" }
+{ "type": "title", "text": "&#FF3B1D&lBLOOD MOON RAID" }
+```
+
+If you want full JSON text component, that still works too.
+
 Text output types:
 - `chat` or `broadcast` = chat message
 - `actionbar` = text above hotbar
@@ -438,8 +532,10 @@ Raid raid = new RaidBuilder(raidId)
 ### Example registration
 ```java
 RaidGuiSettings gui = RaidGuiBuilder.create()
-        .mainTexture(new ResourceLocation("mymod", "gui/raid_main.png"))
-        .progressTexture(new ResourceLocation("mymod", "gui/raid_progress.png"))
+        .progressTextures(
+                new ResourceLocation("mymod", "gui/raid_bar_empty.png"),
+                new ResourceLocation("mymod", "gui/raid_bar_full.png")
+        )
         .size(180, 18)
         .build();
 
@@ -459,6 +555,33 @@ RaidonApi.registerRaid(registration);
 RaidonApi.startRaid(raidId, serverLevel, centerPos);
 RaidonApi.stopRaid(raidId);
 ```
+
+## Custom progress bar
+If you want custom raid HUD bar:
+```json
+"gui": {
+  "progress_empty": "mymod:gui/raid_bar_empty.png",
+  "progress_full": "mymod:gui/raid_bar_full.png",
+  "size": "256, 24"
+}
+```
+
+How it works:
+- `progress_empty` = full empty bar texture
+- `progress_full` = full filled bar texture
+- both textures render in same place and same size
+- `progress_full` is clipped from left to right by remaining mob progress
+- texts with wave and mob count stay visible
+- old black background is not rendered when custom bar is used
+
+Best way to make textures:
+- use same width and height as `gui.size`
+- `progress_empty` and `progress_full` must be exactly same size
+- keep left/right borders in same pixels on both textures
+- put only bar art in texture, not giant full-screen background
+- safe sizes: `180x18`, `240x20`, `256x24`
+
+If you want old config style, `main` + `progress` still works as legacy alias for empty/full bar.
 
 ## Small recommendation
 - register raids in server lifecycle

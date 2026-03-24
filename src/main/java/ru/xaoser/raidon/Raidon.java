@@ -11,10 +11,12 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.runtime.command.RaidonCommand;
 import ru.xaoser.raidon.runtime.config.RaidConfigLoader;
+import ru.xaoser.raidon.runtime.client.RaidClientResources;
 import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.client.RaidHudOverlay;
@@ -58,6 +60,11 @@ public class Raidon {
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
 
+        }
+
+        @SubscribeEvent
+        public static void addPackFinders(AddPackFindersEvent event) {
+            RaidClientResources.register(event);
         }
 
         @SubscribeEvent

@@ -31,7 +31,9 @@ import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
+import ru.xaoser.raidon.runtime.nbt.RaidNbtCompatibility;
 import ru.xaoser.raidon.runtime.nbt.RelaxedNbtParser;
+import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
@@ -395,8 +397,8 @@ class ActiveRaid implements RaidRuntime {
                 totalWaves,
                 aliveMobsInCurrentWave(),
                 waveTotal,
-                guiSettings.mainTexture(),
-                guiSettings.progressTexture(),
+                guiSettings.resolvedProgressEmptyTexture(),
+                guiSettings.resolvedProgressFullTexture(),
                 guiSettings.width(),
                 guiSettings.height()
         );
@@ -517,18 +519,20 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private void playLoopingSoundNow() {
-        if (loopingSound == null || !BuiltInRegistries.SOUND_EVENT.containsKey(loopingSound.soundId())) {
+        if (loopingSound == null) {
             return;
         }
-        SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(loopingSound.soundId());
         List<ServerPlayer> players = context.playersInRaidZone();
         if (!players.isEmpty()) {
             for (ServerPlayer player : players) {
-                player.playNotifySound(sound, loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
+                RaidNetwork.sendSound(player, loopingSound.soundId(), loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
             }
             return;
         }
-        level.playSound(null, center, sound, loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
+        if (BuiltInRegistries.SOUND_EVENT.containsKey(loopingSound.soundId())) {
+            SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(loopingSound.soundId());
+            level.playSound(null, center, sound, loopingSound.source(), loopingSound.volume(), loopingSound.pitch());
+        }
     }
 
     private void clearLoopingSound() {
@@ -602,7 +606,7 @@ class ActiveRaid implements RaidRuntime {
         }
         try {
             CompoundTag merged = mob.saveWithoutId(new CompoundTag());
-            CompoundTag custom = RelaxedNbtParser.parseCompound(snbt);
+            CompoundTag custom = RaidNbtCompatibility.normalizeEntityData(RelaxedNbtParser.parseCompound(snbt));
             custom.remove("id");
             custom.remove("UUID");
             custom.remove("Pos");

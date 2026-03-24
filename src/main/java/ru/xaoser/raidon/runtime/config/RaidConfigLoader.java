@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonPrimitive;
 import com.google.gson.annotations.SerializedName;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.core.BlockPos;
@@ -13,7 +14,6 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -31,6 +31,7 @@ import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.nbt.RelaxedNbtParser;
+import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.raid.RaidGuiSettings;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
@@ -425,22 +426,23 @@ public final class RaidConfigLoader {
             return;
         }
         ResourceLocation soundId = ResourceLocation.tryParse(action.sound());
-        if (soundId == null || !BuiltInRegistries.SOUND_EVENT.containsKey(soundId)) {
+        if (soundId == null) {
             return;
         }
-        SoundEvent sound = BuiltInRegistries.SOUND_EVENT.get(soundId);
         SoundSource source = parseSoundSource(action.sound_source());
         float volume = clampFloat(action.volume() == null ? 1.0F : action.volume(), 0.0F, 64.0F);
         float pitch = clampFloat(action.pitch() == null ? 1.0F : action.pitch(), 0.0F, 4.0F);
         List<net.minecraft.server.level.ServerPlayer> players = ctx.playersInRaidZone();
         if (!players.isEmpty()) {
             for (var player : players) {
-                player.playNotifySound(sound, source, volume, pitch);
+                RaidNetwork.sendSound(player, soundId, source, volume, pitch);
             }
             return;
         }
-        BlockPos pos = ctx.center();
-        ctx.level().playSound(null, pos, sound, source, volume, pitch);
+        if (BuiltInRegistries.SOUND_EVENT.containsKey(soundId)) {
+            BlockPos pos = ctx.center();
+            ctx.level().playSound(null, pos, BuiltInRegistries.SOUND_EVENT.get(soundId), source, volume, pitch);
+        }
     }
 
     private static void startLoopSound(ru.xaoser.raidon.api.sup.RaidContext ctx, RaidFile.Action action) {
@@ -448,7 +450,7 @@ public final class RaidConfigLoader {
             return;
         }
         ResourceLocation soundId = ResourceLocation.tryParse(action.sound());
-        if (soundId == null || !BuiltInRegistries.SOUND_EVENT.containsKey(soundId)) {
+        if (soundId == null) {
             return;
         }
         SoundSource source = parseSoundSource(action.sound_source());
@@ -626,7 +628,13 @@ public final class RaidConfigLoader {
 
         public record Spawn(int min_radius, int max_radius, int attempts_per_mob, boolean require_ground, boolean avoid_water) {}
 
-        public record Gui(String main, String progress, JsonElement size) {}
+        public record Gui(
+                String main,
+                String progress,
+                @SerializedName(value = "progress_empty", alternate = {"progressEmpty", "empty", "bar_empty", "barEmpty"}) String progress_empty,
+                @SerializedName(value = "progress_full", alternate = {"progressFull", "full", "bar_full", "barFull"}) String progress_full,
+                JsonElement size
+        ) {}
 
         public record Wave(List<Mob> mobs, Completion complete,
                            @SerializedName(value = "on_start", alternate = {"onWaveStart"}) List<Action> on_start,
@@ -828,9 +836,11 @@ public final class RaidConfigLoader {
 
         ResourceLocation main = parseTexture(gui.main(), logger, file, "gui.main");
         ResourceLocation progress = parseTexture(gui.progress(), logger, file, "gui.progress");
+        ResourceLocation progressEmpty = parseTexture(gui.progress_empty(), logger, file, "gui.progress_empty");
+        ResourceLocation progressFull = parseTexture(gui.progress_full(), logger, file, "gui.progress_full");
         int[] size = parseGuiSize(gui.size(), logger, file);
 
-        return new RaidGuiSettings(main, progress, size[0], size[1]);
+        return new RaidGuiSettings(main, progress, progressEmpty, progressFull, size[0], size[1]);
     }
 
     private static ResourceLocation parseTexture(String value, Logger logger, Path file, String key) {
@@ -919,7 +929,11 @@ public final class RaidConfigLoader {
             return null;
         }
         try {
-            CompoundTag tag = RelaxedNbtParser.parseCompound(startNbt);
+            JsonElement resolvedStartNbt = resolveNbtInput(startNbt, logger, file, "start_nbt");
+            if (resolvedStartNbt == null || resolvedStartNbt.isJsonNull()) {
+                return null;
+            }
+            CompoundTag tag = RelaxedNbtParser.parseCompound(resolvedStartNbt);
             String raw = firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event"));
             RaidStartSettings.Trigger trigger = parseTrigger(raw);
             warnIfUnknownTrigger(raw, trigger, logger, file, "start_nbt");
@@ -1059,7 +1073,11 @@ public final class RaidConfigLoader {
             return List.of();
         }
         try {
-            Tag root = RelaxedNbtParser.parseTag(actionsNbt);
+            JsonElement resolvedActionsNbt = resolveNbtInput(actionsNbt, logger, file, key);
+            if (resolvedActionsNbt == null || resolvedActionsNbt.isJsonNull()) {
+                return List.of();
+            }
+            Tag root = RelaxedNbtParser.parseTag(resolvedActionsNbt);
             if (root instanceof CompoundTag compoundTag) {
                 return parseActionsFromNbt(compoundTag);
             }
@@ -1313,19 +1331,73 @@ public final class RaidConfigLoader {
         if (!nbtSystemEnabled || nbt == null || nbt.isJsonNull()) {
             return null;
         }
-        if (nbt.isJsonPrimitive() && nbt.getAsJsonPrimitive().isString()) {
-            String raw = nbt.getAsString();
+        JsonElement resolvedNbt = resolveNbtInput(nbt, logger, file,
+                "waves[" + waveIndex + "].mobs[" + mobType + "].nbt");
+        if (resolvedNbt == null || resolvedNbt.isJsonNull()) {
+            return null;
+        }
+        if (resolvedNbt.isJsonPrimitive() && resolvedNbt.getAsJsonPrimitive().isString()) {
+            String raw = resolvedNbt.getAsString();
             if (raw == null || raw.isBlank()) {
                 return null;
             }
         }
         try {
-            return RelaxedNbtParser.normalizeCompoundString(nbt);
+            return RelaxedNbtParser.normalizeCompoundString(resolvedNbt);
         } catch (CommandSyntaxException exception) {
             logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}): {}",
                     mobType, waveIndex, file.getFileName(), exception.getMessage());
             return null;
         }
+    }
+
+    private static JsonElement resolveNbtInput(JsonElement element, Logger logger, Path raidFile, String key) {
+        if (element == null || element.isJsonNull() || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return element;
+        }
+        String raw = element.getAsString();
+        if (raw == null || raw.isBlank()) {
+            return element;
+        }
+        Path nbtFile = resolveNbtFilePath(raw.trim(), raidFile);
+        if (nbtFile == null) {
+            return element;
+        }
+        try {
+            return new JsonPrimitive(Files.readString(nbtFile));
+        } catch (IOException exception) {
+            logger.warn("[Raidon] Failed to read {} file '{}' in {}: {}",
+                    key, nbtFile, raidFile.getFileName(), exception.getMessage());
+            return null;
+        }
+    }
+
+    private static Path resolveNbtFilePath(String raw, Path raidFile) {
+        if (raw.isBlank()) {
+            return null;
+        }
+        String reference;
+        if (raw.startsWith("@file:")) {
+            reference = raw.substring("@file:".length()).trim();
+        } else if (raw.startsWith("file:")) {
+            reference = raw.substring("file:".length()).trim();
+        } else if (raw.endsWith(".snbt")) {
+            reference = raw;
+        } else {
+            return null;
+        }
+        if (reference.isBlank()) {
+            return null;
+        }
+        Path candidate = Path.of(reference);
+        if (candidate.isAbsolute()) {
+            return candidate.normalize();
+        }
+        Path local = raidFile.getParent() == null ? candidate : raidFile.getParent().resolve(candidate).normalize();
+        if (Files.exists(local)) {
+            return local;
+        }
+        return FMLPaths.CONFIGDIR.get().resolve("raidon").resolve("nbt").resolve(candidate).normalize();
     }
 
     private static boolean parseBooleanFlag(JsonElement value) {

@@ -83,12 +83,12 @@ public final class RaidHudState {
         return progress == null ? 0 : progress.totalInWave();
     }
 
-    public static ResourceLocation mainTexture() {
-        return progress == null ? null : progress.mainTexture();
+    public static ResourceLocation progressEmptyTexture() {
+        return progress == null ? null : progress.progressEmptyTexture();
     }
 
-    public static ResourceLocation progressTexture() {
-        return progress == null ? null : progress.progressTexture();
+    public static ResourceLocation progressFullTexture() {
+        return progress == null ? null : progress.progressFullTexture();
     }
 
     public static int barWidth() {

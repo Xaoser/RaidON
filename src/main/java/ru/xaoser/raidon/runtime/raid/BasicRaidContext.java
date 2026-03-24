@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import ru.xaoser.raidon.api.sup.RaidContext;
+import ru.xaoser.raidon.runtime.text.RaidTextFormatter;
 
 public class BasicRaidContext implements RaidContext {
     @FunctionalInterface
@@ -56,7 +57,7 @@ public class BasicRaidContext implements RaidContext {
 
     @Override
     public void broadcast(String msg) {
-        Component component = Component.literal(msg);
+        Component component = RaidTextFormatter.parse(msg);
         for (var player : playersInRaidZone()) {
             player.sendSystemMessage(component);
         }
@@ -64,7 +65,7 @@ public class BasicRaidContext implements RaidContext {
 
     @Override
     public void sendActionBar(String msg) {
-        Component component = Component.literal(msg);
+        Component component = RaidTextFormatter.parse(msg);
         for (var player : playersInRaidZone()) {
             player.connection.send(new ClientboundSetActionBarTextPacket(component));
         }
@@ -72,7 +73,7 @@ public class BasicRaidContext implements RaidContext {
 
     @Override
     public void sendTitle(String msg, int fadeIn, int stay, int fadeOut) {
-        Component component = Component.literal(msg);
+        Component component = RaidTextFormatter.parse(msg);
         for (var player : playersInRaidZone()) {
             player.connection.send(new ClientboundSetTitlesAnimationPacket(resolveTiming(fadeIn, DEFAULT_FADE_IN),
                     resolveTiming(stay, DEFAULT_STAY), resolveTiming(fadeOut, DEFAULT_FADE_OUT)));
@@ -82,7 +83,7 @@ public class BasicRaidContext implements RaidContext {
 
     @Override
     public void sendSubtitle(String msg, int fadeIn, int stay, int fadeOut) {
-        Component component = Component.literal(msg);
+        Component component = RaidTextFormatter.parse(msg);
         for (var player : playersInRaidZone()) {
             player.connection.send(new ClientboundSetTitlesAnimationPacket(resolveTiming(fadeIn, DEFAULT_FADE_IN),
                     resolveTiming(stay, DEFAULT_STAY), resolveTiming(fadeOut, DEFAULT_FADE_OUT)));

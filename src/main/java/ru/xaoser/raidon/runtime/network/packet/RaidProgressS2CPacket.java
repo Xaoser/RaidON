@@ -47,8 +47,8 @@ public final class RaidProgressS2CPacket {
             int totalWaves,
             int aliveInWave,
             int totalInWave,
-            ResourceLocation mainTexture,
-            ResourceLocation progressTexture,
+            ResourceLocation progressEmptyTexture,
+            ResourceLocation progressFullTexture,
             int barWidth,
             int barHeight
     ) {
@@ -58,8 +58,8 @@ public final class RaidProgressS2CPacket {
             buf.writeVarInt(totalWaves);
             buf.writeVarInt(aliveInWave);
             buf.writeVarInt(totalInWave);
-            buf.writeNullable(mainTexture, FriendlyByteBuf::writeResourceLocation);
-            buf.writeNullable(progressTexture, FriendlyByteBuf::writeResourceLocation);
+            buf.writeNullable(progressEmptyTexture, FriendlyByteBuf::writeResourceLocation);
+            buf.writeNullable(progressFullTexture, FriendlyByteBuf::writeResourceLocation);
             buf.writeVarInt(barWidth);
             buf.writeVarInt(barHeight);
         }
