@@ -35,16 +35,14 @@ public final class MobAiHelper {
     private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
     private static final String RAID_STATE_TAG = "raidon_ai_state";
     private static final String RAID_PENDING_RETURN_TAG = "raidon_pending_return";
-    private static final String RAID_CHASING_UNTIL_TAG = "raidon_chasing_until";
     private static final String RAID_RETURN_BLOCKED_TAG = "raidon_return_blocked";
     private static final String RAID_RETURN_REASON_TAG = "raidon_return_reason";
     private static final String RAID_HARD_RADIUS_TAG = "raidon_hard_radius";
+    private static final String RAID_COMBAT_ENGAGED_TAG = "raidon_combat_engaged";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double DEFAULT_FOLLOW_RANGE = 32.0D;
     private static final double MIN_FOLLOW_RANGE = 24.0D;
     private static final double MAX_FOLLOW_RANGE = 40.0D;
-    private static final double CHASE_DISTANCE = 18.0D;
-    private static final int CHASE_WINDOW_TICKS = 60;
     private static final double EXTRA_HARD_BOUNDARY_RADIUS = 30.0D;
     private static final double DEFAULT_AI_SPEED_MULTIPLIER = 1.0D;
     private static final double DEFAULT_HARD_LEASH_MULTIPLIER = 1.75D;
@@ -145,51 +143,18 @@ public final class MobAiHelper {
         return isOutsideHardBoundary(mob, settings);
     }
 
-    private static boolean isChasing(PathfinderMob mob) {
-        long until = mob.getPersistentData().getLong(RAID_CHASING_UNTIL_TAG);
-        return until > mob.level().getGameTime();
-    }
-
-    private static void markChasing(PathfinderMob mob, int ticks) {
-        long until = mob.level().getGameTime() + Math.max(1, ticks);
-        mob.getPersistentData().putLong(RAID_CHASING_UNTIL_TAG, until);
-    }
-
-    private static boolean isActiveChaseTarget(PathfinderMob mob, LivingEntity target) {
-        if (target == null || !target.isAlive()) {
-            return false;
-        }
-        if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
-            return false;
-        }
-        if (!isTargetWithinCombatBounds(mob, target)) {
-            return false;
-        }
-        double distanceToTargetSqr = mob.distanceToSqr(target);
-        double maxDistanceSqr = CHASE_DISTANCE * CHASE_DISTANCE;
-        return mob.hasLineOfSight(target) || distanceToTargetSqr <= maxDistanceSqr;
-    }
-
     private static ReturnDecision resolveReturnDecision(PathfinderMob mob, BehaviorSettings settings) {
+        LivingEntity currentTarget = mob.getTarget();
         if (shouldForceReturn(mob, settings)) {
-            return ReturnDecision.allowed("hardLeash", null);
+            setCombatEngaged(mob, false);
+            return ReturnDecision.allowed("hardLeash", currentTarget);
         }
 
-        LivingEntity target = mob.getTarget();
-        if (isActiveChaseTarget(mob, target)) {
-            markChasing(mob, CHASE_WINDOW_TICKS);
-            return ReturnDecision.blocked("targetAlive", target);
+        LivingEntity target = refreshCombatTarget(mob);
+        if (target != null) {
+            return ReturnDecision.blocked(target instanceof Player ? "combatPlayer" : "combatTarget", target);
         }
-        if (hasCombatPriorityTarget(mob, target)) {
-            return ReturnDecision.blocked(target instanceof Player ? "playerTarget" : "trackedTarget", target);
-        }
-        if (isChasing(mob)) {
-            return ReturnDecision.blocked("chaseWindow", target);
-        }
-        if (target == null || !target.isAlive()) {
-            return ReturnDecision.allowed("noTarget", target);
-        }
-        return ReturnDecision.allowed("lostSightTooLong", target);
+        return ReturnDecision.allowed(currentTarget == null ? "noTarget" : "combatFinished", currentTarget);
     }
 
     private static void updateReturnStateLog(PathfinderMob mob, ReturnDecision decision) {
@@ -312,6 +277,76 @@ public final class MobAiHelper {
             return isAggroEligiblePlayer(player) && isTargetWithinCombatBounds(mob, target);
         }
         return !isRaidMob(target) && isTargetWithinCombatBounds(mob, target);
+    }
+
+    private static LivingEntity refreshCombatTarget(PathfinderMob mob) {
+        LivingEntity current = mob.getTarget();
+        if (hasCombatPriorityTarget(mob, current)) {
+            setCombatEngaged(mob, true);
+            return current;
+        }
+
+        if (current != null) {
+            mob.setTarget(null);
+        }
+
+        LivingEntity replacement = findVisibleCombatTarget(mob);
+        if (replacement != null) {
+            mob.setTarget(replacement);
+            setCombatEngaged(mob, true);
+            return replacement;
+        }
+
+        setCombatEngaged(mob, false);
+        return null;
+    }
+
+    private static LivingEntity findVisibleCombatTarget(PathfinderMob mob) {
+        double searchRadius = getCombatSearchRadius(mob);
+        double verticalRadius = Math.max(8.0D, searchRadius * 0.5D);
+        Player bestPlayer = null;
+        double bestPlayerDistance = Double.MAX_VALUE;
+        LivingEntity bestOther = null;
+        double bestOtherDistance = Double.MAX_VALUE;
+
+        for (LivingEntity candidate : mob.level().getEntitiesOfClass(
+                LivingEntity.class,
+                mob.getBoundingBox().inflate(searchRadius, verticalRadius, searchRadius),
+                entity -> isCombatSearchCandidate(mob, entity) && mob.hasLineOfSight(entity)
+        )) {
+            double distance = mob.distanceToSqr(candidate);
+            if (candidate instanceof Player player) {
+                if (distance < bestPlayerDistance) {
+                    bestPlayer = player;
+                    bestPlayerDistance = distance;
+                }
+                continue;
+            }
+            if (distance < bestOtherDistance) {
+                bestOther = candidate;
+                bestOtherDistance = distance;
+            }
+        }
+
+        return bestPlayer != null ? bestPlayer : bestOther;
+    }
+
+    private static boolean isCombatSearchCandidate(PathfinderMob mob, LivingEntity candidate) {
+        if (candidate == null || candidate == mob || !candidate.isAlive() || isRaidMob(candidate)) {
+            return false;
+        }
+        if (candidate instanceof Player player) {
+            return isAggroEligiblePlayer(player) && isTargetWithinCombatBounds(mob, candidate);
+        }
+        return isTargetWithinCombatBounds(mob, candidate);
+    }
+
+    private static double getCombatSearchRadius(PathfinderMob mob) {
+        AttributeInstance followRange = mob.getAttribute(Attributes.FOLLOW_RANGE);
+        if (followRange == null) {
+            return DEFAULT_FOLLOW_RANGE;
+        }
+        return Math.max(MIN_FOLLOW_RANGE, followRange.getValue());
     }
 
     private static void sanitizeGoalSelector(PathfinderMob mob, SpawnBehavior behavior) {
@@ -443,6 +478,23 @@ public final class MobAiHelper {
 
     private static void setPendingReturn(PathfinderMob mob, boolean pending) {
         mob.getPersistentData().putBoolean(RAID_PENDING_RETURN_TAG, pending);
+    }
+
+    private static boolean isCombatEngaged(PathfinderMob mob) {
+        return mob.getPersistentData().getBoolean(RAID_COMBAT_ENGAGED_TAG);
+    }
+
+    private static void setCombatEngaged(PathfinderMob mob, boolean engaged) {
+        if (mob.getPersistentData().getBoolean(RAID_COMBAT_ENGAGED_TAG) == engaged) {
+            return;
+        }
+        mob.getPersistentData().putBoolean(RAID_COMBAT_ENGAGED_TAG, engaged);
+        LOGGER.debug("[Raidon][AI] combat {} mob={} type={} pos={} target={}",
+                engaged ? "engaged" : "released",
+                mob.getUUID(), EntityType.getKey(mob.getType()), mob.blockPosition(), describeTarget(mob.getTarget()));
+        if (engaged) {
+            setPendingReturn(mob, false);
+        }
     }
 
     private enum RaidState {
@@ -607,12 +659,9 @@ public final class MobAiHelper {
             if (--tickCooldown > 0) return;
             tickCooldown = 5;
 
-            LivingEntity target = mob.getTarget();
-            if (target != null && target.isAlive()) {
+            LivingEntity target = shouldForceReturn(mob, null) ? null : refreshCombatTarget(mob);
+            if (target != null) {
                 setState(mob, RaidState.ATTACKING);
-                if (isActiveChaseTarget(mob, target)) {
-                    markChasing(mob, CHASE_WINDOW_TICKS);
-                }
                 LOGGER.debug("[Raidon][AI] target active mob={} target={} inRestriction={} distanceToCenter={}", mob.getUUID(),
                         describeTarget(target),
                         mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition()),
@@ -623,16 +672,8 @@ public final class MobAiHelper {
                 return;
             }
 
-            // если недавно гнались — остаёмся в ATTACKING логически, а главное: блокируем return по isChasing()
-            if (isChasing(mob)) {
-                setState(mob, RaidState.ATTACKING);
-                return;
-            }
-
             if (mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
-                if (!isPendingReturn(mob)) {
-                    setState(mob, RaidState.GOING_AGGRESIVE);
-                }
+                setState(mob, RaidState.RETURNING);
                 return;
             }
             setState(mob, RaidState.IDLE_AGGRESIVE);
@@ -668,26 +709,36 @@ public final class MobAiHelper {
 
             LivingEntity target = mob.getTarget();
             if (target == null) {
+                setCombatEngaged(mob, false);
                 return;
             }
+            if (hasCombatPriorityTarget(mob, target)) {
+                setCombatEngaged(mob, true);
+                return;
+            }
+
+            LivingEntity replacement = findVisibleCombatTarget(mob);
+            if (replacement != null) {
+                LOGGER.debug("[Raidon][AI] swap target mob={} old={} new={}",
+                        mob.getUUID(), describeTarget(target), describeTarget(replacement));
+                mob.setTarget(replacement);
+                setCombatEngaged(mob, true);
+                return;
+            }
+
             if (!target.isAlive()) {
                 LOGGER.debug("[Raidon][AI] clear dead target mob={} target={}", mob.getUUID(), describeTarget(target));
-                mob.setTarget(null);
-                return;
-            }
-            if (target instanceof Player && !isAggroEligiblePlayer(target)) {
+            } else if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
                 LOGGER.debug("[Raidon][AI] clear ineligible player target mob={} target={} spectator={} creative={}",
-                        mob.getUUID(), describeTarget(target), ((Player) target).isSpectator(), ((Player) target).isCreative());
-                mob.setTarget(null);
-                return;
-            }
-            if (isOutsideHardBoundary(mob, null) || !isTargetWithinCombatBounds(mob, target)) {
+                        mob.getUUID(), describeTarget(target), player.isSpectator(), player.isCreative());
+            } else {
                 LOGGER.debug("[Raidon][AI] clear out-of-combat-bounds target mob={} target={} center={} hardRadius={}",
                         mob.getUUID(), describeTarget(target),
                         mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
                         String.format("%.1f", getHardBoundaryRadius(mob, null)));
-                mob.setTarget(null);
             }
+            mob.setTarget(null);
+            setCombatEngaged(mob, false);
         }
     }
 
@@ -764,7 +815,7 @@ public final class MobAiHelper {
         public void stop() {
             LOGGER.debug("[Raidon][AI] return stop mob={} at={} inRestriction={} target={}",
                     mob.getUUID(), mob.blockPosition(), mob.isWithinRestriction(mob.blockPosition()), describeTarget(mob.getTarget()));
-            if (hasCombatPriorityTarget(mob, mob.getTarget())) {
+            if (isCombatEngaged(mob) || hasCombatPriorityTarget(mob, mob.getTarget())) {
                 mob.getNavigation().stop();
             }
             if (mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition())) {
