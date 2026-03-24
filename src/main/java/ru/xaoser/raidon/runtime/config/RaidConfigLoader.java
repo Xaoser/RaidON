@@ -5,8 +5,13 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
 import com.google.gson.annotations.SerializedName;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
@@ -213,7 +218,9 @@ public final class RaidConfigLoader {
 
             RaidPointSettings pointSettings = parsePointSettings(model.points(), logger, file);
             RaidGuiSettings guiSettings = parseGuiSettings(model.gui(), logger, file);
-            RaidStartSettings startSettings = parseStartSettings(model.start());
+            RaidStartSettings startSettings = parseStartSettings(model.start(), model.start_nbt(), nbtSystemEnabled, logger, file);
+            List<RaidFile.Action> raidEndActions = resolveActions(model.on_raid_end(), model.on_raid_end_nbt(),
+                    nbtSystemEnabled, logger, file, "on_raid_end_nbt");
 
             List<RaidFile.Wave> waves = model.waves() == null ? List.of() : model.waves();
             if (waves.isEmpty()) {
@@ -226,7 +233,7 @@ public final class RaidConfigLoader {
             // Build raid
             RaidBuilder builder = new RaidBuilder(id)
                     .difficulty((float) model.difficulty())
-                    .endAction(buildActions(model.on_raid_end()))
+                    .endAction(buildActions(raidEndActions))
                     .globalDrops(globalDrops);
 
             boolean hasValidWave = false;
@@ -285,8 +292,10 @@ public final class RaidConfigLoader {
 
                     wb.completeWhenAllDead();
 
-                    if (wave.on_end() != null && !wave.on_end().isEmpty()) {
-                        wb.onWaveEnd(buildActions(wave.on_end()));
+                    List<RaidFile.Action> waveEndActions = resolveActions(wave.on_end(), wave.on_end_nbt(),
+                            nbtSystemEnabled, logger, file, "waves[" + waveIndex + "].on_end_nbt");
+                    if (!waveEndActions.isEmpty()) {
+                        wb.onWaveEnd(buildActions(waveEndActions));
                     }
                 });
 
@@ -486,12 +495,14 @@ public final class RaidConfigLoader {
             @SerializedName(value = "nbt_system", alternate = {"nbtSystem"}) JsonElement nbt_system,
             double difficulty,
             Start start,
+            @SerializedName(value = "start_nbt", alternate = {"startNbt"}) JsonElement start_nbt,
             Points points,
             Drops drops,
             Spawn spawn,
             @SerializedName(value = "GUI", alternate = {"gui"}) Gui gui,
             List<Wave> waves,
-            List<Action> on_raid_end
+            List<Action> on_raid_end,
+            @SerializedName(value = "on_raid_end_nbt", alternate = {"onRaidEndNbt"}) JsonElement on_raid_end_nbt
     ) {
         public record Start(
                 String type,
@@ -522,9 +533,11 @@ public final class RaidConfigLoader {
 
         public record Gui(String main, String progress, JsonElement size) {}
 
-        public record Wave(List<Mob> mobs, Completion complete, List<Action> on_end, int spawn_radius) {
+        public record Wave(List<Mob> mobs, Completion complete, List<Action> on_end,
+                           @SerializedName(value = "on_end_nbt", alternate = {"onEndNbt"}) JsonElement on_end_nbt,
+                           int spawn_radius) {
             public Wave(List<Mob> mobs, Completion complete, List<Action> on_end) {
-                this(mobs, complete, on_end, 0);
+                this(mobs, complete, on_end, null, 0);
             }
         }
 
@@ -771,33 +784,23 @@ public final class RaidConfigLoader {
         return new int[]{width, height};
     }
 
+    private static RaidStartSettings parseStartSettings(RaidFile.Start start, JsonElement startNbt, boolean nbtSystemEnabled,
+                                                        Logger logger, Path file) {
+        if (nbtSystemEnabled) {
+            RaidStartSettings fromNbt = parseStartSettingsNbt(startNbt, logger, file);
+            if (fromNbt != null) {
+                return fromNbt;
+            }
+        }
+        return parseStartSettings(start);
+    }
+
     private static RaidStartSettings parseStartSettings(RaidFile.Start start) {
         if (start == null) {
             return RaidStartSettings.DEFAULT;
         }
-        String raw = "";
-        if (start.type() != null && !start.type().isBlank()) {
-            raw = start.type();
-        } else if (start.event() != null && !start.event().isBlank()) {
-            raw = start.event();
-        }
-        String normalized = raw.trim().toLowerCase();
-        RaidStartSettings.Trigger trigger = switch (normalized) {
-            case "player_join", "player_join_any", "on_player_join", "player has join" -> RaidStartSettings.Trigger.PLAYER_JOIN_ANY;
-            case "player has join in singleplay world", "player_join_singleplayer", "singleplayer_join" -> RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER;
-            case "night", "night_fall", "on_night" -> RaidStartSettings.Trigger.NIGHT_FALL;
-            case "on_kill" -> RaidStartSettings.Trigger.ON_KILL;
-            case "on_item_pickup", "on_pickup", "item_pickup" -> RaidStartSettings.Trigger.ON_ITEM_PICKUP;
-            case "on_trade", "trade" -> RaidStartSettings.Trigger.ON_TRADE;
-            case "on_structure_visit", "visit_structure" -> RaidStartSettings.Trigger.ON_STRUCTURE_VISIT;
-            case "on_dimension_change" -> RaidStartSettings.Trigger.ON_DIMENSION_CHANGE;
-            case "on_respawn" -> RaidStartSettings.Trigger.ON_RESPAWN;
-            case "on_enter_biome" -> RaidStartSettings.Trigger.ON_ENTER_BIOME;
-            case "on_day" -> RaidStartSettings.Trigger.ON_DAY;
-            case "on_sunset" -> RaidStartSettings.Trigger.ON_SUNSET;
-            case "on_midnight" -> RaidStartSettings.Trigger.ON_MIDNIGHT;
-            default -> RaidStartSettings.Trigger.MANUAL;
-        };
+        String raw = firstNonBlank(start.type(), start.event());
+        RaidStartSettings.Trigger trigger = parseTrigger(raw);
         ResourceLocation entity = parseOptionalResourceLocation(start.entity());
         ResourceLocation item = parseOptionalResourceLocation(start.item());
         ResourceLocation structure = parseOptionalResourceLocation(start.structure());
@@ -805,6 +808,32 @@ public final class RaidConfigLoader {
         ResourceLocation dimension = parseOptionalResourceLocation(start.dimension());
         List<RaidStartSettings.Condition> conditions = parseStartConditions(start.conditions());
         return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, dimension, conditions, start.value());
+    }
+
+    private static RaidStartSettings parseStartSettingsNbt(JsonElement startNbt, Logger logger, Path file) {
+        if (startNbt == null || startNbt.isJsonNull()) {
+            return null;
+        }
+        if (!(startNbt.isJsonPrimitive() && startNbt.getAsJsonPrimitive().isString())) {
+            logger.warn("[Raidon] Invalid start_nbt in {}. Expected SNBT string.", file.getFileName());
+            return null;
+        }
+        try {
+            CompoundTag tag = TagParser.parseTag(startNbt.getAsString().trim());
+            RaidStartSettings.Trigger trigger = parseTrigger(firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event")));
+            ResourceLocation entity = parseOptionalResourceLocation(getTagString(tag, "entity"));
+            ResourceLocation item = parseOptionalResourceLocation(getTagString(tag, "item"));
+            ResourceLocation structure = parseOptionalResourceLocation(getTagString(tag, "structure"));
+            ResourceLocation biome = parseOptionalResourceLocation(getTagString(tag, "biome"));
+            ResourceLocation dimension = parseOptionalResourceLocation(getTagString(tag, "dimension"));
+            long cooldownTicks = getTagLong(tag, "cooldown_ticks");
+            int value = getTagInt(tag, "value");
+            List<RaidStartSettings.Condition> conditions = parseStartConditions(tag.getList("conditions", Tag.TAG_COMPOUND));
+            return new RaidStartSettings(trigger, cooldownTicks, entity, item, structure, biome, dimension, conditions, value);
+        } catch (CommandSyntaxException exception) {
+            logger.warn("[Raidon] Invalid start_nbt in {}: {}", file.getFileName(), exception.getMessage());
+            return null;
+        }
     }
 
     private static ResourceLocation parseOptionalResourceLocation(String value) {
@@ -835,6 +864,152 @@ public final class RaidConfigLoader {
             ));
         }
         return List.copyOf(parsed);
+    }
+
+    private static List<RaidStartSettings.Condition> parseStartConditions(ListTag conditions) {
+        if (conditions == null || conditions.isEmpty()) {
+            return List.of();
+        }
+        List<RaidStartSettings.Condition> parsed = new ArrayList<>();
+        for (int i = 0; i < conditions.size(); i++) {
+            if (!(conditions.get(i) instanceof CompoundTag tag)) {
+                continue;
+            }
+            String type = getTagString(tag, "type");
+            if (type == null || type.isBlank()) {
+                continue;
+            }
+            parsed.add(new RaidStartSettings.Condition(
+                    type.trim().toLowerCase(),
+                    getTagInt(tag, "min"),
+                    getTagInt(tag, "max"),
+                    getTagInt(tag, "value"),
+                    parseOptionalResourceLocation(getTagString(tag, "biome")),
+                    parseOptionalResourceLocation(getTagString(tag, "dimension"))
+            ));
+        }
+        return List.copyOf(parsed);
+    }
+
+    private static List<RaidFile.Action> resolveActions(List<RaidFile.Action> actions, JsonElement actionsNbt, boolean nbtSystemEnabled,
+                                                        Logger logger, Path file, String key) {
+        if (actions != null && !actions.isEmpty()) {
+            return List.copyOf(actions);
+        }
+        if (!nbtSystemEnabled || actionsNbt == null || actionsNbt.isJsonNull()) {
+            return List.of();
+        }
+        if (!(actionsNbt.isJsonPrimitive() && actionsNbt.getAsJsonPrimitive().isString())) {
+            logger.warn("[Raidon] Invalid {} in {}. Expected SNBT string.", key, file.getFileName());
+            return List.of();
+        }
+        try {
+            CompoundTag root = TagParser.parseTag(actionsNbt.getAsString().trim());
+            return parseActionsFromNbt(root);
+        } catch (CommandSyntaxException exception) {
+            logger.warn("[Raidon] Invalid {} in {}: {}", key, file.getFileName(), exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private static List<RaidFile.Action> parseActionsFromNbt(CompoundTag root) {
+        if (root == null || root.isEmpty()) {
+            return List.of();
+        }
+        List<RaidFile.Action> parsed = new ArrayList<>();
+        if (root.contains("actions", Tag.TAG_LIST)) {
+            ListTag actions = root.getList("actions", Tag.TAG_COMPOUND);
+            for (int i = 0; i < actions.size(); i++) {
+                if (actions.get(i) instanceof CompoundTag actionTag) {
+                    RaidFile.Action action = parseActionTag(actionTag);
+                    if (action != null) {
+                        parsed.add(action);
+                    }
+                }
+            }
+        } else {
+            RaidFile.Action action = parseActionTag(root);
+            if (action != null) {
+                parsed.add(action);
+            }
+        }
+        return List.copyOf(parsed);
+    }
+
+    private static RaidFile.Action parseActionTag(CompoundTag tag) {
+        String type = getTagString(tag, "type");
+        if (type == null || type.isBlank()) {
+            return null;
+        }
+        return new RaidFile.Action(
+                type,
+                getTagString(tag, "text"),
+                getTagString(tag, "summon"),
+                getOptionalInt(tag, "value"),
+                getTagString(tag, "command"),
+                getOptionalLong(tag, "time"),
+                getTagString(tag, "effect"),
+                getOptionalInt(tag, "duration"),
+                getOptionalInt(tag, "amplifier"),
+                getTagString(tag, "target"),
+                getTagString(tag, "entity"),
+                getTagString(tag, "block"),
+                getOptionalInt(tag, "x"),
+                getOptionalInt(tag, "y"),
+                getOptionalInt(tag, "z"),
+                getOptionalInt(tag, "radius")
+        );
+    }
+
+    private static RaidStartSettings.Trigger parseTrigger(String raw) {
+        String normalized = raw == null ? "" : raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "player_join", "player_join_any", "on_player_join", "player has join" -> RaidStartSettings.Trigger.PLAYER_JOIN_ANY;
+            case "player has join in singleplay world", "player_join_singleplayer", "singleplayer_join" -> RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER;
+            case "night", "night_fall", "on_night" -> RaidStartSettings.Trigger.NIGHT_FALL;
+            case "on_kill" -> RaidStartSettings.Trigger.ON_KILL;
+            case "on_item_pickup", "on_pickup", "item_pickup" -> RaidStartSettings.Trigger.ON_ITEM_PICKUP;
+            case "on_trade", "trade" -> RaidStartSettings.Trigger.ON_TRADE;
+            case "on_structure_visit", "visit_structure" -> RaidStartSettings.Trigger.ON_STRUCTURE_VISIT;
+            case "on_dimension_change" -> RaidStartSettings.Trigger.ON_DIMENSION_CHANGE;
+            case "on_respawn" -> RaidStartSettings.Trigger.ON_RESPAWN;
+            case "on_enter_biome" -> RaidStartSettings.Trigger.ON_ENTER_BIOME;
+            case "on_day" -> RaidStartSettings.Trigger.ON_DAY;
+            case "on_sunset" -> RaidStartSettings.Trigger.ON_SUNSET;
+            case "on_midnight" -> RaidStartSettings.Trigger.ON_MIDNIGHT;
+            default -> RaidStartSettings.Trigger.MANUAL;
+        };
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
+    }
+
+    private static String getTagString(CompoundTag tag, String key) {
+        if (tag == null || key == null || !tag.contains(key, Tag.TAG_STRING)) {
+            return null;
+        }
+        String value = tag.getString(key);
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static int getTagInt(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getInt(key) : 0;
+    }
+
+    private static long getTagLong(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getLong(key) : 0L;
+    }
+
+    private static Integer getOptionalInt(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getInt(key) : null;
+    }
+
+    private static Long getOptionalLong(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getLong(key) : null;
     }
 
     private static MobTraits parseMobTuning(JsonElement traits) {

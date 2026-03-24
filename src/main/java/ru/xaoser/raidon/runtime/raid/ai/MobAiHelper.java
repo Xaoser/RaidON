@@ -180,6 +180,9 @@ public final class MobAiHelper {
             markChasing(mob, CHASE_WINDOW_TICKS);
             return ReturnDecision.blocked("targetAlive", target);
         }
+        if (hasCombatPriorityTarget(mob, target)) {
+            return ReturnDecision.blocked(target instanceof Player ? "playerTarget" : "trackedTarget", target);
+        }
         if (isChasing(mob)) {
             return ReturnDecision.blocked("chaseWindow", target);
         }
@@ -299,6 +302,16 @@ public final class MobAiHelper {
             return false;
         }
         return isTargetWithinCombatBounds(mob, target);
+    }
+
+    private static boolean hasCombatPriorityTarget(PathfinderMob mob, LivingEntity target) {
+        if (target == null || !target.isAlive()) {
+            return false;
+        }
+        if (target instanceof Player player) {
+            return isAggroEligiblePlayer(player) && isTargetWithinCombatBounds(mob, target);
+        }
+        return !isRaidMob(target) && isTargetWithinCombatBounds(mob, target);
     }
 
     private static void sanitizeGoalSelector(PathfinderMob mob, SpawnBehavior behavior) {
@@ -751,6 +764,9 @@ public final class MobAiHelper {
         public void stop() {
             LOGGER.debug("[Raidon][AI] return stop mob={} at={} inRestriction={} target={}",
                     mob.getUUID(), mob.blockPosition(), mob.isWithinRestriction(mob.blockPosition()), describeTarget(mob.getTarget()));
+            if (hasCombatPriorityTarget(mob, mob.getTarget())) {
+                mob.getNavigation().stop();
+            }
             if (mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition())) {
                 setPendingReturn(mob, false);
             }
