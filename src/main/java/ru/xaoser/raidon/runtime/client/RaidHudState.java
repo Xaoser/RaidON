@@ -102,4 +102,8 @@ public final class RaidHudState {
     public static ResourceLocation raidId() {
         return progress == null ? null : progress.raidId();
     }
+
+    public static String raidName() {
+        return progress == null ? "" : progress.raidName();
+    }
 }

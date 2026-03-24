@@ -8,14 +8,16 @@ import java.util.List;
 
 public final class Raid {
     private final ResourceLocation id;
+    private final String name;
     private final List<RaidWave> waves;
     private final float difficulty;
     private final RaidAction startAction;
     private final RaidAction endAction;
     private final List<DropEntry> globalDrops;
 
-    public Raid(ResourceLocation id, List<RaidWave> waves, float difficulty, RaidAction startAction, RaidAction endAction, List<DropEntry> globalDrops) {
+    public Raid(ResourceLocation id, String name, List<RaidWave> waves, float difficulty, RaidAction startAction, RaidAction endAction, List<DropEntry> globalDrops) {
         this.id = id;
+        this.name = name == null || name.isBlank() ? id.getPath() : name;
         this.waves = List.copyOf(waves);
         this.difficulty = difficulty;
         this.startAction = startAction;
@@ -24,6 +26,7 @@ public final class Raid {
     }
 
     public ResourceLocation id() { return id; }
+    public String name() { return name; }
     public List<RaidWave> waves() { return waves; }
     public float difficulty() { return difficulty; }
     public RaidAction startAction() { return startAction; }

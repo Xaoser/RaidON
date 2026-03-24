@@ -43,6 +43,7 @@ public final class RaidProgressS2CPacket {
 
     public record Progress(
             ResourceLocation raidId,
+            String raidName,
             int waveIndex,
             int totalWaves,
             int aliveInWave,
@@ -54,6 +55,7 @@ public final class RaidProgressS2CPacket {
     ) {
         void encode(FriendlyByteBuf buf) {
             buf.writeResourceLocation(raidId);
+            buf.writeUtf(raidName == null ? "" : raidName, 256);
             buf.writeVarInt(waveIndex);
             buf.writeVarInt(totalWaves);
             buf.writeVarInt(aliveInWave);
@@ -67,6 +69,7 @@ public final class RaidProgressS2CPacket {
         static Progress decode(FriendlyByteBuf buf) {
             return new Progress(
                     buf.readResourceLocation(),
+                    buf.readUtf(256),
                     buf.readVarInt(),
                     buf.readVarInt(),
                     buf.readVarInt(),

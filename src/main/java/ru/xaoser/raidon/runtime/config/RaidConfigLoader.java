@@ -52,6 +52,7 @@ public final class RaidConfigLoader {
     private static final String DEFAULT_RAID_CONFIG = """
             {
 {
+  "Name": "Example Raid",
   "id": "raidon:example_raid",
   "difficulty": 10,
   "start": {
@@ -243,6 +244,7 @@ public final class RaidConfigLoader {
             List<DropEntry> globalDrops = parseDrops(model.drops() == null ? null : model.drops().global(), logger, file);
 
             RaidBuilder builder = new RaidBuilder(id)
+                    .name(model.name())
                     .difficulty((float) model.difficulty())
                     .startAction(buildActions(raidStartActions))
                     .endAction(buildActions(raidEndActions))
@@ -580,6 +582,7 @@ public final class RaidConfigLoader {
     ) {}
 
     public record RaidFile(
+            @SerializedName(value = "Name", alternate = {"name"}) String name,
             String id,
             @SerializedName(value = "nbt_system", alternate = {"nbtSystem"}) JsonElement nbt_system,
             double difficulty,

@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 
 public final class RaidBuilder {
     private final ResourceLocation id;
+    private String name;
 
     /** Stores waves by index. */
     private final Map<Integer, WaveBuilder> waves = new TreeMap<>();
@@ -27,6 +28,12 @@ public final class RaidBuilder {
 
     public RaidBuilder(ResourceLocation id) {
         this.id = Objects.requireNonNull(id, "id");
+    }
+
+    /** Sets the HUD/display name of the raid. */
+    public RaidBuilder name(String value) {
+        this.name = value == null || value.isBlank() ? null : value;
+        return this;
     }
 
     /** Adds a wave at the next free index. */
@@ -93,7 +100,7 @@ public final class RaidBuilder {
             builtWaves.add(entry.getValue().build());
         }
 
-        return new Raid(id, builtWaves, difficulty, startAction, endAction, globalDrops);
+        return new Raid(id, name, builtWaves, difficulty, startAction, endAction, globalDrops);
     }
 
     private static float clamp(float v, float min, float max) {

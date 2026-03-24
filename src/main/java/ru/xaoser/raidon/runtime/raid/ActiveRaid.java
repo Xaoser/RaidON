@@ -391,6 +391,7 @@ class ActiveRaid implements RaidRuntime {
         int waveTotal = waveTotals.getOrDefault(currentWaveIndex, 0);
         return new RaidProgressS2CPacket.Progress(
                 raid.id(),
+                raid.name(),
                 currentWaveIndex,
                 totalWaves,
                 aliveMobsInCurrentWave(),

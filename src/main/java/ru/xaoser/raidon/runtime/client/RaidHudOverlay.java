@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import ru.xaoser.raidon.runtime.text.RaidTextFormatter;
 
 public enum RaidHudOverlay implements IGuiOverlay {
     INSTANCE;
@@ -16,7 +17,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
     private static final int DEFAULT_PANEL_HEIGHT = 40;
     private static final int DEFAULT_BAR_HEIGHT = 10;
     private static final int PANEL_MARGIN = 14;
-    private static final int PANEL_BOTTOM = 54;
+    private static final int PANEL_BOTTOM = 14;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -42,7 +43,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int x = screenWidth - panelWidth - PANEL_MARGIN;
         int y = screenHeight - panelHeight - PANEL_BOTTOM;
 
-        Component raidText = Component.translatable("raidon.hud.raid");
+        Component raidText = RaidTextFormatter.parse(RaidHudState.raidName());
         Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
         Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
 
@@ -81,7 +82,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int right = x + width;
         int bottom = y + height;
         int barX = left + 10;
-        int barY = top + 16;
+        int barY = top + 19;
         int barWidth = width - 20;
         int filledWidth = Math.max(0, Math.min(barWidth, Math.round(barWidth * progress)));
         int infoY = barY + DEFAULT_BAR_HEIGHT + 5;
