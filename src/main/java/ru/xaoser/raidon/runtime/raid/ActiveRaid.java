@@ -530,12 +530,6 @@ class ActiveRaid implements RaidRuntime {
                 kb.setBaseValue(Math.max(0.0D, Math.min(1.0D, tuning.knockbackResistance())));
             }
         }
-        if (tuning.movementSpeedMultiplier() != null) {
-            AttributeInstance movement = mob.getAttribute(Attributes.MOVEMENT_SPEED);
-            if (movement != null) {
-                movement.setBaseValue(Math.max(0.02D, movement.getBaseValue() * Math.max(0.1D, tuning.movementSpeedMultiplier())));
-            }
-        }
     }
 
     private static float difficultyMultiplier(float difficulty) {

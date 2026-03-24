@@ -10,12 +10,9 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.BreedGoal;
-import net.minecraft.world.entity.ai.goal.FollowParentGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.PanicGoal;
-import net.minecraft.world.entity.ai.goal.TemptGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
@@ -29,6 +26,7 @@ import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Predicate;
+
 
 public final class MobAiHelper {
     private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(MobAiHelper.class);
@@ -59,14 +57,12 @@ public final class MobAiHelper {
 
         MobTargeting cfg = targeting == null ? MobTargeting.defaults() : targeting;
         BehaviorSettings settings = BehaviorSettings.from(tuning);
-        sanitizeGoalSelector(pathfinder);
+        sanitizeGoalSelector(pathfinder, behavior);
 
         if (raidTargetPoint != null) {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
             addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidReturnToRestrictionGoal.class,
-                    () -> new RaidReturnToRestrictionGoal(pathfinder, settings));
-            addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 6, RaidPatrolWithinRestrictionGoal.class,
-                    () -> new RaidPatrolWithinRestrictionGoal(pathfinder, settings));
+                    () -> new RaidReturnToRestrictionGoal(pathfinder, behavior, settings));
         }
 
         addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidStateGoal.class,
@@ -85,40 +81,15 @@ public final class MobAiHelper {
         applyFollowRange(mob, targeting.radius());
         applyMovementSpeed(mob, settings.movementSpeedMultiplier());
         ensureBaseDamage(mob);
+        sanitizeTargetSelector(mob);
+        replaceMeleeAttackGoal(mob, settings);
 
-        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true));
+        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidHurtByTargetGoal.class,
+                () -> new RaidHurtByTargetGoal(mob));
 
-        Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
-        Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
+        Predicate<LivingEntity> preferredFilter = restrictTargets(mob, createPreferredTargetFilter(targeting));
+        Predicate<LivingEntity> fallbackFilter = restrictTargets(mob, createTargetFilter(targeting));
 
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidNearestPlayerTargetGoal.class,
-                () -> new RaidNearestPlayerTargetGoal(mob));
-
-        if (!targeting.attackTypes().isEmpty() || targeting.attackAll()) {
-            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestPreferredTargetGoal.class,
-                    () -> new RaidNearestPreferredTargetGoal(mob, preferredFilter));
-            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 2, RaidNearestFallbackTargetGoal.class,
-                    () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
-        } else {
-            addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestFallbackTargetGoal.class,
-                    () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
-        }
-    }
-
-    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
-        applyFollowRange(mob, targeting.radius());
-        applyMovementSpeed(mob, settings.movementSpeedMultiplier());
-        ensureBaseDamage(mob);
-
-        Predicate<LivingEntity> preferredFilter = createPreferredTargetFilter(targeting);
-        Predicate<LivingEntity> fallbackFilter = createTargetFilter(targeting);
-
-        // Zombie-like combat package for raid-neutral mobs, without stripping their base utility goals.
-        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 1, MeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true));
-        addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, HurtByTargetGoal.class,
-                () -> new HurtByTargetGoal(mob));
         addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestPlayerTargetGoal.class,
                 () -> new RaidNearestPlayerTargetGoal(mob));
 
@@ -130,6 +101,14 @@ public final class MobAiHelper {
         } else {
             addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 2, RaidNearestFallbackTargetGoal.class,
                     () -> new RaidNearestFallbackTargetGoal(mob, fallbackFilter));
+        }
+    }
+
+    private static void setupNeutral(PathfinderMob mob, MobTargeting targeting, BehaviorSettings settings) {
+        applyFollowRange(mob, targeting.radius());
+        applyMovementSpeed(mob, settings.movementSpeedMultiplier());
+        if (mob.getTarget() != null) {
+            mob.setTarget(null);
         }
     }
 
@@ -156,6 +135,20 @@ public final class MobAiHelper {
         };
     }
 
+    private static boolean shouldForceReturn(PathfinderMob mob, BehaviorSettings settings) {
+        if (!mob.hasRestriction()) {
+            return false;
+        }
+
+        BlockPos center = mob.getRestrictCenter();
+        double dx = mob.getX() - (center.getX() + 0.5D);
+        double dz = mob.getZ() - (center.getZ() + 0.5D);
+
+        double distanceSqr = dx * dx + dz * dz;
+        double hardRadius = Math.max(2.0D, mob.getRestrictRadius() * settings.hardLeashMultiplier());
+        return distanceSqr > hardRadius * hardRadius;
+    }
+
     private static boolean isChasing(PathfinderMob mob) {
         long until = mob.getPersistentData().getLong(RAID_CHASING_UNTIL_TAG);
         return until > mob.level().getGameTime();
@@ -173,12 +166,19 @@ public final class MobAiHelper {
         if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
             return false;
         }
+        if (!isTargetWithinRestriction(mob, target)) {
+            return false;
+        }
         double distanceToTargetSqr = mob.distanceToSqr(target);
         double maxDistanceSqr = CHASE_DISTANCE * CHASE_DISTANCE;
         return mob.hasLineOfSight(target) || distanceToTargetSqr <= maxDistanceSqr;
     }
 
-    private static ReturnDecision resolveReturnDecision(PathfinderMob mob) {
+    private static ReturnDecision resolveReturnDecision(PathfinderMob mob, BehaviorSettings settings) {
+        if (shouldForceReturn(mob, settings)) {
+            return ReturnDecision.allowed("hardLeash", null);
+        }
+
         LivingEntity target = mob.getTarget();
         if (isActiveChaseTarget(mob, target)) {
             markChasing(mob, CHASE_WINDOW_TICKS);
@@ -239,15 +239,46 @@ public final class MobAiHelper {
         };
     }
 
-    private static void sanitizeGoalSelector(PathfinderMob mob) {
+    private static Predicate<LivingEntity> restrictTargets(PathfinderMob mob, Predicate<LivingEntity> filter) {
+        return entity -> filter.test(entity) && isTargetWithinRestriction(mob, entity);
+    }
+
+    private static boolean isTargetWithinRestriction(PathfinderMob mob, LivingEntity target) {
+        return target != null && (!mob.hasRestriction() || mob.isWithinRestriction(target.blockPosition()));
+    }
+
+    private static boolean isRetaliationTargetAllowed(PathfinderMob mob, LivingEntity target) {
+        if (target == null || !target.isAlive() || isRaidMob(target)) {
+            return false;
+        }
+        if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
+            return false;
+        }
+        return isTargetWithinRestriction(mob, target);
+    }
+
+    private static void sanitizeGoalSelector(PathfinderMob mob, SpawnBehavior behavior) {
+        if (behavior != SpawnBehavior.HOSTILE) {
+            return;
+        }
         Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
+        goals.removeIf(goal -> goal.getGoal() instanceof PanicGoal);
+    }
+
+    private static void sanitizeTargetSelector(PathfinderMob mob) {
+        Set<WrappedGoal> goals = mob.targetSelector.getAvailableGoals();
         goals.removeIf(goal -> {
             Goal inner = goal.getGoal();
-            return inner instanceof TemptGoal
-                    || inner instanceof PanicGoal
-                    || inner instanceof BreedGoal
-                    || inner instanceof FollowParentGoal;
+            return inner instanceof HurtByTargetGoal && !(inner instanceof RaidHurtByTargetGoal)
+                    || inner instanceof NearestAttackableTargetGoal && !(inner instanceof PersistentRaidTargetGoal);
         });
+    }
+
+    private static void replaceMeleeAttackGoal(PathfinderMob mob, BehaviorSettings settings) {
+        Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
+        goals.removeIf(goal -> goal.getGoal() instanceof MeleeAttackGoal && !(goal.getGoal() instanceof RaidMeleeAttackGoal));
+        addGoalIfAbsent(mob, goals, 1, RaidMeleeAttackGoal.class,
+                () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true, settings));
     }
 
     private static boolean isRaidMob(LivingEntity entity) {
@@ -317,7 +348,7 @@ public final class MobAiHelper {
 
     private static void addGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
                                         Class<? extends Goal> goalClass, GoalSupplier supplier) {
-        boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
+        boolean exists = goals.stream().anyMatch(goal -> goal.getGoal().getClass() == goalClass);
         if (!exists) {
             mob.goalSelector.addGoal(priority, supplier.create());
         }
@@ -325,7 +356,7 @@ public final class MobAiHelper {
 
     private static void addTargetGoalIfAbsent(PathfinderMob mob, Set<WrappedGoal> goals, int priority,
                                               Class<? extends Goal> goalClass, GoalSupplier supplier) {
-        boolean exists = goals.stream().anyMatch(goal -> goalClass.isInstance(goal.getGoal()));
+        boolean exists = goals.stream().anyMatch(goal -> goal.getGoal().getClass() == goalClass);
         if (!exists) {
             mob.targetSelector.addGoal(priority, supplier.create());
         }
@@ -366,10 +397,36 @@ public final class MobAiHelper {
 
     private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
         private final PathfinderMob mob;
+        private final BehaviorSettings settings;
 
-        private RaidMeleeAttackGoal(PathfinderMob mob, double speedModifier, boolean followingTargetEvenIfNotSeen) {
+        private RaidMeleeAttackGoal(PathfinderMob mob, double speedModifier, boolean followingTargetEvenIfNotSeen, BehaviorSettings settings) {
             super(mob, speedModifier, followingTargetEvenIfNotSeen);
             this.mob = mob;
+            this.settings = settings;
+        }
+
+        @Override
+        public boolean canUse() {
+            if (shouldForceReturn(mob, settings)) {
+                return false;
+            }
+            return super.canUse();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            if (shouldForceReturn(mob, settings)) {
+                return false;
+            }
+            return super.canContinueToUse();
+        }
+
+        @Override
+        public void stop() {
+            super.stop();
+            if (shouldForceReturn(mob, settings)) {
+                mob.getNavigation().stop();
+            }
         }
 
         @Override
@@ -383,6 +440,25 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+    }
+
+    private static final class RaidHurtByTargetGoal extends HurtByTargetGoal {
+        private final PathfinderMob mob;
+
+        private RaidHurtByTargetGoal(PathfinderMob mob) {
+            super(mob);
+            this.mob = mob;
+        }
+
+        @Override
+        public boolean canUse() {
+            return isRetaliationTargetAllowed(mob, mob.getLastHurtByMob()) && super.canUse();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return isRetaliationTargetAllowed(mob, mob.getTarget()) && super.canContinueToUse();
         }
     }
 
@@ -421,8 +497,9 @@ public final class MobAiHelper {
 
     private static final class RaidNearestPlayerTargetGoal extends PersistentRaidTargetGoal<Player> {
         private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
-            super(mob, Player.class, 10, true, false, MobAiHelper::isAggroEligiblePlayer,
-                    MobAiHelper::isAggroEligiblePlayer);
+            super(mob, Player.class, 10, true, false,
+                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinRestriction(mob, entity),
+                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinRestriction(mob, entity));
         }
     }
 
@@ -533,18 +610,28 @@ public final class MobAiHelper {
                 LOGGER.debug("[Raidon][AI] clear ineligible player target mob={} target={} spectator={} creative={}",
                         mob.getUUID(), describeTarget(target), ((Player) target).isSpectator(), ((Player) target).isCreative());
                 mob.setTarget(null);
+                return;
+            }
+            if (!isTargetWithinRestriction(mob, target)) {
+                LOGGER.debug("[Raidon][AI] clear out-of-restriction target mob={} target={} center={} radius={}",
+                        mob.getUUID(), describeTarget(target),
+                        mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
+                        mob.hasRestriction() ? String.format("%.1f", mob.getRestrictRadius()) : "<none>");
+                mob.setTarget(null);
             }
         }
     }
 
     private static final class RaidReturnToRestrictionGoal extends Goal {
         private final PathfinderMob mob;
+        private final SpawnBehavior behavior;
         private final BehaviorSettings settings;
         private int moveCooldown;
         private boolean hadActiveTarget;
 
-        private RaidReturnToRestrictionGoal(PathfinderMob mob, BehaviorSettings settings) {
+        private RaidReturnToRestrictionGoal(PathfinderMob mob, SpawnBehavior behavior, BehaviorSettings settings) {
             this.mob = mob;
+            this.behavior = behavior;
             this.settings = settings;
             // Use only MOVE so this goal does not contend with combat LOOK behavior.
             this.setFlags(EnumSet.of(Flag.MOVE));
@@ -552,7 +639,7 @@ public final class MobAiHelper {
 
         @Override
         public boolean canUse() {
-            ReturnDecision decision = resolveReturnDecision(mob);
+            ReturnDecision decision = resolveReturnDecision(mob, settings);
             updateReturnStateLog(mob, decision);
             if (decision.blocked()) {
                 hadActiveTarget = true;
@@ -572,7 +659,7 @@ public final class MobAiHelper {
 
         @Override
         public boolean canContinueToUse() {
-            ReturnDecision decision = resolveReturnDecision(mob);
+            ReturnDecision decision = resolveReturnDecision(mob, settings);
             updateReturnStateLog(mob, decision);
             if (decision.blocked()) return false;
             if (!mob.hasRestriction()) return false;
@@ -582,6 +669,15 @@ public final class MobAiHelper {
         @Override
         public void start() {
             moveCooldown = 0;
+
+            if (shouldForceReturn(mob, settings)) {
+                LivingEntity target = mob.getTarget();
+                if (target != null) {
+                    LOGGER.debug("[Raidon][AI] hard leash clear target mob={} target={}", mob.getUUID(), describeTarget(target));
+                    mob.setTarget(null);
+                }
+            }
+
             LOGGER.debug("[Raidon][AI] return start mob={} from={} center={} radius={}",
                     mob.getUUID(), mob.blockPosition(), mob.getRestrictCenter(), String.format("%.1f", mob.getRestrictRadius()));
             issueMoveToRestriction();
@@ -607,12 +703,12 @@ public final class MobAiHelper {
         private void issueMoveToRestriction() {
             BlockPos restrictCenter = mob.getRestrictCenter();
             double centerY = resolveNavigationY(mob, restrictCenter);
-            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D,
-                    1.0D * settings.aiSpeedMultiplier());
+            double speed = returnSpeedModifier(behavior, settings);
+            mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D, speed);
             moveCooldown = 20;
             LOGGER.debug("[Raidon][AI] return moveTo mob={} from={} to={} navY={} speed={}",
                     mob.getUUID(), mob.blockPosition(), restrictCenter, String.format("%.2f", centerY),
-                    String.format("%.2f", 1.0D * settings.aiSpeedMultiplier()));
+                    String.format("%.2f", speed));
 
             if (isPendingReturn(mob)) {
                 setState(mob, RaidState.RETURNING);
@@ -688,6 +784,7 @@ public final class MobAiHelper {
             }
         }
 
+
         private void moveToNextPoint() {
             BlockPos center = mob.getRestrictCenter();
             int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
@@ -735,6 +832,11 @@ public final class MobAiHelper {
     private static double resolveNavigationY(PathfinderMob mob, BlockPos target) {
         BlockPos top = mob.level().getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, target);
         return top.getY() + 1;
+    }
+
+    private static double returnSpeedModifier(SpawnBehavior behavior, BehaviorSettings settings) {
+        double base = behavior == SpawnBehavior.HOSTILE ? 1.0D : 0.6D;
+        return Math.max(0.2D, base * settings.aiSpeedMultiplier());
     }
 
     private record BehaviorSettings(double aiSpeedMultiplier, double hardLeashMultiplier, double movementSpeedMultiplier) {
