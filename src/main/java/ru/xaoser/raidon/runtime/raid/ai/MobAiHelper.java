@@ -19,7 +19,6 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.InteractionHand;
-import org.slf4j.Logger;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
@@ -30,14 +29,10 @@ import java.util.function.Predicate;
 
 
 public final class MobAiHelper {
-    private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(MobAiHelper.class);
     public static final String RAID_MOB_TAG = "raidon_raid_mob";
     private static final String RAID_BASE_DAMAGE_TAG = "raidon_base_damage";
     private static final String RAID_BASE_SPEED_TAG = "raidon_base_speed";
-    private static final String RAID_STATE_TAG = "raidon_ai_state";
     private static final String RAID_PENDING_RETURN_TAG = "raidon_pending_return";
-    private static final String RAID_RETURN_BLOCKED_TAG = "raidon_return_blocked";
-    private static final String RAID_RETURN_REASON_TAG = "raidon_return_reason";
     private static final String RAID_HARD_RADIUS_TAG = "raidon_hard_radius";
     private static final String RAID_COMBAT_ENGAGED_TAG = "raidon_combat_engaged";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
@@ -147,37 +142,16 @@ public final class MobAiHelper {
     }
 
     private static ReturnDecision resolveReturnDecision(PathfinderMob mob, BehaviorSettings settings) {
-        LivingEntity currentTarget = mob.getTarget();
         if (shouldForceReturn(mob, settings)) {
             setCombatEngaged(mob, false);
-            return ReturnDecision.allowed("hardLeash", currentTarget);
+            return ReturnDecision.allow();
         }
 
         LivingEntity target = refreshCombatTarget(mob);
         if (target != null) {
-            return ReturnDecision.blocked(target instanceof Player ? "combatPlayer" : "combatTarget", target);
+            return ReturnDecision.deny();
         }
-        return ReturnDecision.allowed(currentTarget == null ? "noTarget" : "combatFinished", currentTarget);
-    }
-
-    private static void updateReturnStateLog(PathfinderMob mob, ReturnDecision decision) {
-        boolean previousBlocked = mob.getPersistentData().getBoolean(RAID_RETURN_BLOCKED_TAG);
-        String previousReason = mob.getPersistentData().getString(RAID_RETURN_REASON_TAG);
-        if (previousBlocked == decision.blocked() && previousReason.equals(decision.reason())) {
-            return;
-        }
-        mob.getPersistentData().putBoolean(RAID_RETURN_BLOCKED_TAG, decision.blocked());
-        mob.getPersistentData().putString(RAID_RETURN_REASON_TAG, decision.reason());
-
-        double centerDistance = mob.hasRestriction()
-                ? Math.sqrt(mob.distanceToSqr(mob.getRestrictCenter().getX() + 0.5D, mob.getY(), mob.getRestrictCenter().getZ() + 0.5D))
-                : -1.0D;
-        double targetDistance = decision.target() == null ? -1.0D : Math.sqrt(mob.distanceToSqr(decision.target()));
-        LOGGER.debug("[Raidon][AI] return {} mob={} pos={} target={} distanceToCenter={} inRestriction={} distanceToTarget={} reason={}",
-                decision.blocked() ? "blocked" : "allowed", mob.getUUID(), mob.blockPosition(), describeTarget(decision.target()),
-                centerDistance < 0 ? "n/a" : String.format("%.2f", centerDistance),
-                mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition()),
-                targetDistance < 0 ? "n/a" : String.format("%.2f", targetDistance), decision.reason());
+        return ReturnDecision.allow();
     }
 
     private static Predicate<LivingEntity> createTargetFilter(PathfinderMob mob, MobTargeting targeting) {
@@ -473,24 +447,6 @@ public final class MobAiHelper {
         }
     }
 
-    private static void setState(PathfinderMob mob, RaidState state) {
-        String previous = mob.getPersistentData().getString(RAID_STATE_TAG);
-        mob.getPersistentData().putString(RAID_STATE_TAG, state.name());
-        if (!state.name().equals(previous)) {
-            LOGGER.debug("[Raidon][AI] state change mob={} type={} {} -> {} pos={} restrictionCenter={} restrictionRadius={} target={}",
-                    mob.getUUID(), EntityType.getKey(mob.getType()), previous.isEmpty() ? "<unset>" : previous, state,
-                    mob.blockPosition(), mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
-                    mob.hasRestriction() ? String.format("%.1f", mob.getRestrictRadius()) : "<none>", describeTarget(mob.getTarget()));
-        }
-    }
-
-    private static String describeTarget(LivingEntity target) {
-        if (target == null) {
-            return "<none>";
-        }
-        return EntityType.getKey(target.getType()) + "#" + target.getUUID() + "@" + target.blockPosition();
-    }
-
     private static boolean isPendingReturn(PathfinderMob mob) {
         return mob.getPersistentData().getBoolean(RAID_PENDING_RETURN_TAG);
     }
@@ -508,19 +464,9 @@ public final class MobAiHelper {
             return;
         }
         mob.getPersistentData().putBoolean(RAID_COMBAT_ENGAGED_TAG, engaged);
-        LOGGER.debug("[Raidon][AI] combat {} mob={} type={} pos={} target={}",
-                engaged ? "engaged" : "released",
-                mob.getUUID(), EntityType.getKey(mob.getType()), mob.blockPosition(), describeTarget(mob.getTarget()));
         if (engaged) {
             setPendingReturn(mob, false);
         }
-    }
-
-    private enum RaidState {
-        GOING_AGGRESIVE,
-        IDLE_AGGRESIVE,
-        RETURNING,
-        ATTACKING
     }
 
     private static final class RaidCombatGoal extends Goal {
@@ -709,22 +655,12 @@ public final class MobAiHelper {
 
             LivingEntity target = shouldForceReturn(mob, null) ? null : refreshCombatTarget(mob);
             if (target != null) {
-                setState(mob, RaidState.ATTACKING);
-                LOGGER.debug("[Raidon][AI] target active mob={} target={} inRestriction={} distanceToCenter={}", mob.getUUID(),
-                        describeTarget(target),
-                        mob.hasRestriction() && mob.isWithinRestriction(mob.blockPosition()),
-                        mob.hasRestriction() ? String.format("%.2f", Math.sqrt(mob.distanceToSqr(
-                                mob.getRestrictCenter().getX() + 0.5D,
-                                mob.getY(),
-                                mob.getRestrictCenter().getZ() + 0.5D))) : "n/a");
                 return;
             }
 
             if (mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition())) {
-                setState(mob, RaidState.RETURNING);
                 return;
             }
-            setState(mob, RaidState.IDLE_AGGRESIVE);
         }
     }
 
@@ -766,24 +702,11 @@ public final class MobAiHelper {
 
             LivingEntity replacement = findVisibleCombatTarget(mob);
             if (replacement != null) {
-                LOGGER.debug("[Raidon][AI] swap target mob={} old={} new={}",
-                        mob.getUUID(), describeTarget(target), describeTarget(replacement));
                 mob.setTarget(replacement);
                 setCombatEngaged(mob, true);
                 return;
             }
 
-            if (!target.isAlive()) {
-                LOGGER.debug("[Raidon][AI] clear dead target mob={} target={}", mob.getUUID(), describeTarget(target));
-            } else if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
-                LOGGER.debug("[Raidon][AI] clear ineligible player target mob={} target={} spectator={} creative={}",
-                        mob.getUUID(), describeTarget(target), player.isSpectator(), player.isCreative());
-            } else {
-                LOGGER.debug("[Raidon][AI] clear out-of-combat-bounds target mob={} target={} center={} hardRadius={}",
-                        mob.getUUID(), describeTarget(target),
-                        mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
-                        String.format("%.1f", getHardBoundaryRadius(mob, null)));
-            }
             mob.setTarget(null);
             setCombatEngaged(mob, false);
         }
@@ -806,11 +729,8 @@ public final class MobAiHelper {
         @Override
         public boolean canUse() {
             ReturnDecision decision = resolveReturnDecision(mob, settings);
-            updateReturnStateLog(mob, decision);
             if (decision.blocked()) {
                 hadActiveTarget = true;
-                LOGGER.debug("[Raidon][AI] return blocked by active target mob={} pos={} target={} inRestriction={}",
-                        mob.getUUID(), mob.blockPosition(), describeTarget(mob.getTarget()), mob.isWithinRestriction(mob.blockPosition()));
                 return false;
             }
 
@@ -826,7 +746,6 @@ public final class MobAiHelper {
         @Override
         public boolean canContinueToUse() {
             ReturnDecision decision = resolveReturnDecision(mob, settings);
-            updateReturnStateLog(mob, decision);
             if (decision.blocked()) return false;
             if (!mob.hasRestriction()) return false;
             return !mob.isWithinRestriction(mob.blockPosition());
@@ -839,13 +758,9 @@ public final class MobAiHelper {
             if (shouldForceReturn(mob, settings)) {
                 LivingEntity target = mob.getTarget();
                 if (target != null) {
-                    LOGGER.debug("[Raidon][AI] hard leash clear target mob={} target={}", mob.getUUID(), describeTarget(target));
                     mob.setTarget(null);
                 }
             }
-
-            LOGGER.debug("[Raidon][AI] return start mob={} from={} center={} radius={}",
-                    mob.getUUID(), mob.blockPosition(), mob.getRestrictCenter(), String.format("%.1f", mob.getRestrictRadius()));
             issueMoveToRestriction();
         }
 
@@ -858,8 +773,6 @@ public final class MobAiHelper {
 
         @Override
         public void stop() {
-            LOGGER.debug("[Raidon][AI] return stop mob={} at={} inRestriction={} target={}",
-                    mob.getUUID(), mob.blockPosition(), mob.isWithinRestriction(mob.blockPosition()), describeTarget(mob.getTarget()));
             if (isCombatEngaged(mob) || hasCombatPriorityTarget(mob, mob.getTarget())) {
                 mob.getNavigation().stop();
             }
@@ -874,26 +787,17 @@ public final class MobAiHelper {
             double speed = returnSpeedModifier(behavior, settings);
             mob.getNavigation().moveTo(restrictCenter.getX() + 0.5D, centerY, restrictCenter.getZ() + 0.5D, speed);
             moveCooldown = 20;
-            LOGGER.debug("[Raidon][AI] return moveTo mob={} from={} to={} navY={} speed={}",
-                    mob.getUUID(), mob.blockPosition(), restrictCenter, String.format("%.2f", centerY),
-                    String.format("%.2f", speed));
-
-            if (isPendingReturn(mob)) {
-                setState(mob, RaidState.RETURNING);
-            } else {
-                setState(mob, RaidState.GOING_AGGRESIVE);
-            }
         }
 
     }
 
-    private record ReturnDecision(boolean blocked, String reason, LivingEntity target) {
-        private static ReturnDecision blocked(String reason, LivingEntity target) {
-            return new ReturnDecision(true, reason, target);
+    private record ReturnDecision(boolean blocked) {
+        private static ReturnDecision deny() {
+            return new ReturnDecision(true);
         }
 
-        private static ReturnDecision allowed(String reason, LivingEntity target) {
-            return new ReturnDecision(false, reason, target);
+        private static ReturnDecision allow() {
+            return new ReturnDecision(false);
         }
     }
 
