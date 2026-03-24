@@ -197,6 +197,7 @@ public final class RaidConfigLoader {
                 logger.warn("[Raidon] Invalid raid id in {}: {}", file.getFileName(), model.id());
                 return LoadIssue.failed(file, "Invalid raid id: " + model.id());
             }
+            boolean nbtSystemEnabled = parseBooleanFlag(model.nbt_system());
 
             // Spawn settings
             RaidSpawnSettings spawnSettings = model.spawn() == null
@@ -261,7 +262,8 @@ public final class RaidConfigLoader {
                             baseDamage,
                             mobDrops,
                             parseMobTargeting(mob.targets(), logger, file),
-                            parseMobTuning(mob.traits())
+                            parseMobTuning(mob.traits()),
+                            parseMobNbt(mob.nbt(), nbtSystemEnabled, logger, file, waveIndex, mob.type())
                     ));
                 }
 
@@ -277,7 +279,8 @@ public final class RaidConfigLoader {
                     }
 
                     for (ParsedMob mob : parsedMobs) {
-                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops(), mob.targeting(), mob.tuning());
+                        wb.mob(mob.count(), mob.type(), mob.behavior(), mob.baseDamage(), mob.drops(),
+                                mob.targeting(), mob.tuning(), mob.nbtData());
                     }
 
                     wb.completeWhenAllDead();
@@ -474,11 +477,13 @@ public final class RaidConfigLoader {
             Float baseDamage,
             List<DropEntry> drops,
             MobTargeting targeting,
-            MobTraits tuning
+            MobTraits tuning,
+            String nbtData
     ) {}
 
     public record RaidFile(
             String id,
+            @SerializedName(value = "nbt_system", alternate = {"nbtSystem"}) JsonElement nbt_system,
             double difficulty,
             Start start,
             Points points,
@@ -525,9 +530,9 @@ public final class RaidConfigLoader {
 
         public record Completion(String type) {}
 
-        public record Mob(String type, int count, String ai, Double damage, JsonElement targets, List<Drop> drops, JsonElement traits) {
+        public record Mob(String type, int count, String ai, Double damage, JsonElement targets, List<Drop> drops, JsonElement traits, JsonElement nbt) {
             public Mob(String type, int count) {
-                this(type, count, null, null, null, null, null);
+                this(type, count, null, null, null, null, null, null);
             }
         }
 
@@ -843,7 +848,48 @@ public final class RaidConfigLoader {
         Double movementSpeedMultiplier = obj.has("movement_speed_multiplier") ? obj.get("movement_speed_multiplier").getAsDouble() : null;
         Double aiSpeedMultiplier = obj.has("ai_speed_multiplier") ? obj.get("ai_speed_multiplier").getAsDouble() : null;
         Double hardLeashMultiplier = obj.has("hard_leash_multiplier") ? obj.get("hard_leash_multiplier").getAsDouble() : null;
-        return new MobTraits(burnInSun, canDrown, knockbackResistance, movementSpeedMultiplier, aiSpeedMultiplier, hardLeashMultiplier);
+        Boolean raidAiEnabled = null;
+        if (obj.has("raid_ai_enabled")) {
+            raidAiEnabled = obj.get("raid_ai_enabled").getAsBoolean();
+        } else if (obj.has("use_custom_ai")) {
+            raidAiEnabled = obj.get("use_custom_ai").getAsBoolean();
+        } else if (obj.has("ignore_custom_ai")) {
+            raidAiEnabled = !obj.get("ignore_custom_ai").getAsBoolean();
+        }
+        return new MobTraits(burnInSun, canDrown, knockbackResistance, movementSpeedMultiplier, aiSpeedMultiplier, hardLeashMultiplier, raidAiEnabled);
+    }
+
+    private static String parseMobNbt(JsonElement nbt, boolean nbtSystemEnabled, Logger logger, Path file, int waveIndex, String mobType) {
+        if (!nbtSystemEnabled || nbt == null || nbt.isJsonNull()) {
+            return null;
+        }
+        if (nbt.isJsonPrimitive() && nbt.getAsJsonPrimitive().isString()) {
+            String raw = nbt.getAsString();
+            return raw == null || raw.isBlank() ? null : raw.trim();
+        }
+        logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}) - expected SNBT string in 'nbt'",
+                mobType, waveIndex, file.getFileName());
+        return null;
+    }
+
+    private static boolean parseBooleanFlag(JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            return false;
+        }
+        if (value.isJsonPrimitive()) {
+            var primitive = value.getAsJsonPrimitive();
+            if (primitive.isBoolean()) {
+                return primitive.getAsBoolean();
+            }
+            if (primitive.isNumber()) {
+                return primitive.getAsInt() != 0;
+            }
+            if (primitive.isString()) {
+                String normalized = primitive.getAsString().trim().toLowerCase();
+                return normalized.equals("true") || normalized.equals("1") || normalized.equals("yes") || normalized.equals("on");
+            }
+        }
+        return false;
     }
 
     private static MobTargeting parseMobTargeting(JsonElement targets, Logger logger, Path file) {

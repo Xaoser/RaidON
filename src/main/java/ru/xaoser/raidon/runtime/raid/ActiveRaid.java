@@ -1,7 +1,10 @@
 package ru.xaoser.raidon.runtime.raid;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -243,7 +246,8 @@ class ActiveRaid implements RaidRuntime {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
         for (MobEntry entry : wave.mobs()) {
-            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(), entry.targeting(), entry.tuning(), entry.count()));
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(),
+                    entry.targeting(), entry.tuning(), entry.nbtData(), entry.count()));
             total += entry.count();
         }
         pendingMobs.put(waveKey, pending);
@@ -302,12 +306,16 @@ class ActiveRaid implements RaidRuntime {
                     continue;
                 }
                 created++;
+                applyMobNbt(mob, entry.nbtData());
                 applyDifficultyScaling(mob, entry);
                 applyMobTuning(mob, entry.tuning());
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 mob.addTag(MobAiHelper.RAID_MOB_TAG);
-                MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(), raidTargetPoint, mobWanderRadius);
+                if (entry.tuning().usesRaidAi()) {
+                    MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(),
+                            raidTargetPoint, mobWanderRadius, spawnPoint);
+                }
                 if (level.addFreshEntity(mob)) {
                     spawned.add(mob.getUUID());
                     spawnedCount++;
@@ -520,6 +528,29 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
+    private void applyMobNbt(Mob mob, String snbt) {
+        if (mob == null || snbt == null || snbt.isBlank()) {
+            return;
+        }
+        try {
+            CompoundTag merged = mob.saveWithoutId(new CompoundTag());
+            CompoundTag custom = TagParser.parseTag(snbt);
+            custom.remove("id");
+            custom.remove("UUID");
+            custom.remove("Pos");
+            custom.remove("Motion");
+            custom.remove("Rotation");
+            custom.remove("Passengers");
+            merged.merge(custom);
+            mob.load(merged);
+        } catch (CommandSyntaxException exception) {
+            LOGGER.warn("[Raidon][{}] Invalid mob NBT for type {}: {}", raid.id(),
+                    EntityType.getKey(mob.getType()), exception.getMessage());
+        } catch (Exception exception) {
+            LOGGER.warn("[Raidon][{}] Failed to apply mob NBT for type {}", raid.id(), mob.getType(), exception);
+        }
+    }
+
     private void applyMobTuning(Mob mob, MobTraits tuning) {
         if (tuning == null || tuning.isDefault()) {
             return;
@@ -554,15 +585,18 @@ class ActiveRaid implements RaidRuntime {
         private final List<DropEntry> drops;
         private final ru.xaoser.raidon.api.sup.MobTargeting targeting;
         private final MobTraits tuning;
+        private final String nbtData;
         private int remaining;
 
-        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops, ru.xaoser.raidon.api.sup.MobTargeting targeting, MobTraits tuning, int remaining) {
+        private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops,
+                             ru.xaoser.raidon.api.sup.MobTargeting targeting, MobTraits tuning, String nbtData, int remaining) {
             this.type = type;
             this.behavior = behavior;
             this.baseDamage = baseDamage;
             this.drops = drops == null ? List.of() : List.copyOf(drops);
             this.targeting = targeting == null ? ru.xaoser.raidon.api.sup.MobTargeting.defaults() : targeting;
             this.tuning = tuning == null ? MobTraits.defaults() : tuning;
+            this.nbtData = nbtData == null || nbtData.isBlank() ? null : nbtData.trim();
             this.remaining = remaining;
         }
 
@@ -588,6 +622,10 @@ class ActiveRaid implements RaidRuntime {
 
         private MobTraits tuning() {
             return tuning;
+        }
+
+        private String nbtData() {
+            return nbtData;
         }
 
         private int remaining() {

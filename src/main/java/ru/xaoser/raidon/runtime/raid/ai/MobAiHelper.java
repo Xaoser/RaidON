@@ -38,19 +38,21 @@ public final class MobAiHelper {
     private static final String RAID_CHASING_UNTIL_TAG = "raidon_chasing_until";
     private static final String RAID_RETURN_BLOCKED_TAG = "raidon_return_blocked";
     private static final String RAID_RETURN_REASON_TAG = "raidon_return_reason";
+    private static final String RAID_HARD_RADIUS_TAG = "raidon_hard_radius";
     private static final double DEFAULT_BASE_DAMAGE = 2.0D;
     private static final double DEFAULT_FOLLOW_RANGE = 32.0D;
     private static final double MIN_FOLLOW_RANGE = 24.0D;
     private static final double MAX_FOLLOW_RANGE = 40.0D;
     private static final double CHASE_DISTANCE = 18.0D;
     private static final int CHASE_WINDOW_TICKS = 60;
+    private static final double EXTRA_HARD_BOUNDARY_RADIUS = 30.0D;
     private static final double DEFAULT_AI_SPEED_MULTIPLIER = 1.0D;
     private static final double DEFAULT_HARD_LEASH_MULTIPLIER = 1.75D;
 
     private MobAiHelper() {}
 
     public static void applyBehavior(Mob mob, SpawnBehavior behavior, MobTargeting targeting, MobTraits tuning,
-                                     BlockPos raidTargetPoint, int mobWanderRadius) {
+                                     BlockPos raidTargetPoint, int mobWanderRadius, BlockPos spawnPoint) {
         if (!(mob instanceof PathfinderMob pathfinder)) {
             return;
         }
@@ -61,6 +63,7 @@ public final class MobAiHelper {
 
         if (raidTargetPoint != null) {
             pathfinder.restrictTo(raidTargetPoint, Math.max(4, mobWanderRadius));
+            configureHardBoundary(pathfinder, raidTargetPoint, Math.max(4, mobWanderRadius), spawnPoint, settings);
             addGoalIfAbsent(pathfinder, pathfinder.goalSelector.getAvailableGoals(), 0, RaidReturnToRestrictionGoal.class,
                     () -> new RaidReturnToRestrictionGoal(pathfinder, behavior, settings));
         }
@@ -88,7 +91,7 @@ public final class MobAiHelper {
                 () -> new RaidHurtByTargetGoal(mob));
 
         Predicate<LivingEntity> preferredFilter = restrictTargets(mob, createPreferredTargetFilter(targeting));
-        Predicate<LivingEntity> fallbackFilter = restrictTargets(mob, createTargetFilter(targeting));
+        Predicate<LivingEntity> fallbackFilter = restrictTargets(mob, createTargetFilter(mob, targeting));
 
         addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 1, RaidNearestPlayerTargetGoal.class,
                 () -> new RaidNearestPlayerTargetGoal(mob));
@@ -139,14 +142,7 @@ public final class MobAiHelper {
         if (!mob.hasRestriction()) {
             return false;
         }
-
-        BlockPos center = mob.getRestrictCenter();
-        double dx = mob.getX() - (center.getX() + 0.5D);
-        double dz = mob.getZ() - (center.getZ() + 0.5D);
-
-        double distanceSqr = dx * dx + dz * dz;
-        double hardRadius = Math.max(2.0D, mob.getRestrictRadius() * settings.hardLeashMultiplier());
-        return distanceSqr > hardRadius * hardRadius;
+        return isOutsideHardBoundary(mob, settings);
     }
 
     private static boolean isChasing(PathfinderMob mob) {
@@ -166,7 +162,7 @@ public final class MobAiHelper {
         if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
             return false;
         }
-        if (!isTargetWithinRestriction(mob, target)) {
+        if (!isTargetWithinCombatBounds(mob, target)) {
             return false;
         }
         double distanceToTargetSqr = mob.distanceToSqr(target);
@@ -213,7 +209,7 @@ public final class MobAiHelper {
                 targetDistance < 0 ? "n/a" : String.format("%.2f", targetDistance), decision.reason());
     }
 
-    private static Predicate<LivingEntity> createTargetFilter(MobTargeting targeting) {
+    private static Predicate<LivingEntity> createTargetFilter(PathfinderMob mob, MobTargeting targeting) {
         boolean attackAll = targeting.attackAll();
         Set<ResourceLocation> attackTypes = targeting.attackTypes();
         Set<ResourceLocation> ignoreTypes = targeting.ignoreTypes();
@@ -235,16 +231,64 @@ public final class MobAiHelper {
             if (!attackTypes.isEmpty()) {
                 return attackTypes.contains(typeId) || entity instanceof Player;
             }
-            return entity instanceof Player;
+            return entity instanceof Player || isApproachingRaidCenter(mob);
         };
     }
 
     private static Predicate<LivingEntity> restrictTargets(PathfinderMob mob, Predicate<LivingEntity> filter) {
-        return entity -> filter.test(entity) && isTargetWithinRestriction(mob, entity);
+        return entity -> filter.test(entity) && isTargetWithinCombatBounds(mob, entity);
     }
 
-    private static boolean isTargetWithinRestriction(PathfinderMob mob, LivingEntity target) {
-        return target != null && (!mob.hasRestriction() || mob.isWithinRestriction(target.blockPosition()));
+    private static void configureHardBoundary(PathfinderMob mob, BlockPos center, int softRadius, BlockPos spawnPoint, BehaviorSettings settings) {
+        double spawnDistance = spawnPoint == null
+                ? softRadius
+                : horizontalDistance(center, spawnPoint);
+        double hardRadius = Math.max(spawnDistance + EXTRA_HARD_BOUNDARY_RADIUS, softRadius * settings.hardLeashMultiplier());
+        mob.getPersistentData().putDouble(RAID_HARD_RADIUS_TAG, Math.max(softRadius + 1.0D, hardRadius));
+    }
+
+    private static double getHardBoundaryRadius(PathfinderMob mob, BehaviorSettings settings) {
+        if (mob.getPersistentData().contains(RAID_HARD_RADIUS_TAG)) {
+            return Math.max(2.0D, mob.getPersistentData().getDouble(RAID_HARD_RADIUS_TAG));
+        }
+        if (mob.hasRestriction()) {
+            double fallback = settings == null
+                    ? mob.getRestrictRadius() * DEFAULT_HARD_LEASH_MULTIPLIER
+                    : mob.getRestrictRadius() * settings.hardLeashMultiplier();
+            return Math.max(2.0D, fallback);
+        }
+        return 0.0D;
+    }
+
+    private static boolean isWithinHardBoundary(PathfinderMob mob, double hardRadius, double x, double z) {
+        if (hardRadius <= 0.0D || !mob.hasRestriction()) {
+            return true;
+        }
+        BlockPos center = mob.getRestrictCenter();
+        double dx = x - (center.getX() + 0.5D);
+        double dz = z - (center.getZ() + 0.5D);
+        return (dx * dx + dz * dz) <= hardRadius * hardRadius;
+    }
+
+    private static double horizontalDistance(BlockPos first, BlockPos second) {
+        double dx = (first.getX() + 0.5D) - (second.getX() + 0.5D);
+        double dz = (first.getZ() + 0.5D) - (second.getZ() + 0.5D);
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static boolean isApproachingRaidCenter(PathfinderMob mob) {
+        return mob.hasRestriction() && !mob.isWithinRestriction(mob.blockPosition());
+    }
+
+    private static boolean isOutsideHardBoundary(PathfinderMob mob, BehaviorSettings settings) {
+        return !isWithinHardBoundary(mob, getHardBoundaryRadius(mob, settings), mob.getX(), mob.getZ());
+    }
+
+    private static boolean isTargetWithinCombatBounds(PathfinderMob mob, LivingEntity target) {
+        double hardRadius = getHardBoundaryRadius(mob, null);
+        return target != null
+                && isWithinHardBoundary(mob, hardRadius, mob.getX(), mob.getZ())
+                && isWithinHardBoundary(mob, hardRadius, target.getX(), target.getZ());
     }
 
     private static boolean isRetaliationTargetAllowed(PathfinderMob mob, LivingEntity target) {
@@ -254,7 +298,7 @@ public final class MobAiHelper {
         if (target instanceof Player player && !isAggroEligiblePlayer(player)) {
             return false;
         }
-        return isTargetWithinRestriction(mob, target);
+        return isTargetWithinCombatBounds(mob, target);
     }
 
     private static void sanitizeGoalSelector(PathfinderMob mob, SpawnBehavior behavior) {
@@ -496,10 +540,22 @@ public final class MobAiHelper {
     }
 
     private static final class RaidNearestPlayerTargetGoal extends PersistentRaidTargetGoal<Player> {
+        private final PathfinderMob mob;
+
         private RaidNearestPlayerTargetGoal(PathfinderMob mob) {
             super(mob, Player.class, 10, true, false,
-                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinRestriction(mob, entity),
-                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinRestriction(mob, entity));
+                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinCombatBounds(mob, entity),
+                    entity -> isAggroEligiblePlayer(entity) && isTargetWithinCombatBounds(mob, entity));
+            this.mob = mob;
+        }
+
+        @Override
+        public boolean canUse() {
+            LivingEntity current = mob.getTarget();
+            if (current instanceof Player player && isAggroEligiblePlayer(player) && isTargetWithinCombatBounds(mob, player)) {
+                return false;
+            }
+            return super.canUse();
         }
     }
 
@@ -612,11 +668,11 @@ public final class MobAiHelper {
                 mob.setTarget(null);
                 return;
             }
-            if (!isTargetWithinRestriction(mob, target)) {
-                LOGGER.debug("[Raidon][AI] clear out-of-restriction target mob={} target={} center={} radius={}",
+            if (isOutsideHardBoundary(mob, null) || !isTargetWithinCombatBounds(mob, target)) {
+                LOGGER.debug("[Raidon][AI] clear out-of-combat-bounds target mob={} target={} center={} hardRadius={}",
                         mob.getUUID(), describeTarget(target),
                         mob.hasRestriction() ? mob.getRestrictCenter() : "<none>",
-                        mob.hasRestriction() ? String.format("%.1f", mob.getRestrictRadius()) : "<none>");
+                        String.format("%.1f", getHardBoundaryRadius(mob, null)));
                 mob.setTarget(null);
             }
         }
