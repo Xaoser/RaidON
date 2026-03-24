@@ -1,7 +1,7 @@
 # RaidON library
 
 THIS IS STILL ALPHA LIBRARY!!!
-If you found bug, strange thing, cursed chicken invasion or just have idea for better stuff, write me in discord: `xaoser`
+If you found bug, strange thing, cursed chicken invasion or just have idea for better stuff, write me in [discord](https://discord.gg/5NSxKrA8tN)
 
 Do you want zombie apocalypse?
 Do you want village event?
