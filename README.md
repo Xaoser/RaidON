@@ -5,8 +5,8 @@ If you found bug, strange thing, cursed chicken invasion or just have idea for b
 
 Do you want zombie apocalypse?
 Do you want village event?
-Do you want 200 angry chickens running to player?
-Then yes, this library is for you.
+Do you want 200 angry chickens running to you or your friend?
+Then yep, this library is for you.
 
 ## What this mod can do?
 - Load raids from `config/raidon/raids/*.json`
@@ -15,6 +15,7 @@ Then yes, this library is for you.
   `nbt_system: "true"`
 - Start raids from commands
 - Start raids from Java API
+- Start raids from events
 - Spawn mobs with custom AI and custom target logic
 - Add custom mob NBT
 - delete a обычный мусор mob 3d max ultra mega universe edition
