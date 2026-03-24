@@ -115,7 +115,7 @@ If you want use NBT style config, just write:
 {
   "id": "raidon:nbt_test",
   "nbt_system": "true",
-  "start_nbt": "{event:on_kill, entity:minecraft:zombie, cooldown_ticks:200}",
+  "start_nbt": "{event:on_kill, entity:minecraft:zombie, count:10, cooldown_ticks:200}",
   "on_raid_start_nbt": [
     { "type": "broadcast", "text": "raid started" },
     { "type": "sound", "sound": "minecraft:entity.ender_dragon.growl", "volume": 1.2, "pitch": 1.0 }
@@ -207,6 +207,7 @@ So yes, mobs can cheese.
 
 ## Start triggers
 - `manual`
+- `enter_area`
 - `player_join_any`
 - `player_join_singleplayer`
 - `night_fall`
@@ -224,7 +225,9 @@ So yes, mobs can cheese.
 Example:
 ```json
 "start": {
-  "event": "night_fall",
+  "event": "on_kill",
+  "entity": "minecraft:zombie",
+  "count": 10,
   "cooldown_ticks": 24000
 }
 ```
@@ -232,7 +235,83 @@ Example:
 Extra fields:
 - `event` or `type` = trigger name
 - `cooldown_ticks` = delay between auto starts
-- `value` = extra numeric value for trigger
+- `count` = how many matching events are needed before raid starts
+- `radius` = search radius for triggers like `on_structure_visit`
+- `center` = custom raid start center
+- `value` = legacy numeric alias, still supported for old configs
+
+Supported start conditions:
+- `min_players`
+- `max_players`
+- `y_between`
+- `in_biome`
+- `in_dimension`
+- `time_of_day`
+- `moon_phase`
+
+Examples:
+```json
+"start": {
+  "event": "enter_area",
+  "radius": 48,
+  "center": {
+    "type": "structure",
+    "structure": "minecraft:village_plains",
+    "search_radius": 1024,
+    "prefer_nearest": true
+  },
+  "conditions": [
+    { "type": "time_of_day", "min": 13000, "max": 23000 },
+    { "type": "min_players", "value": 1 }
+  ]
+}
+```
+
+```json
+"start": {
+  "event": "on_trade",
+  "item": "minecraft:emerald",
+  "count": 3
+}
+```
+
+```json
+"start": {
+  "event": "on_item_pickup",
+  "item": "minecraft:diamond",
+  "count": 16
+}
+```
+
+```json
+"start": {
+  "event": "on_structure_visit",
+  "structure": "minecraft:village_plains",
+  "radius": 96
+}
+```
+
+Center types:
+- `event` = start raid at trigger position/player position
+- `spawn` = start raid at world spawn
+- `structure` = start raid at located structure center
+
+NBT center example:
+```json
+"start_nbt": {
+  "event": "enter_area",
+  "radius": 48,
+  "center": {
+    "type": "structure",
+    "structure": "minecraft:village_plains",
+    "search_radius": 1024,
+    "prefer_nearest": true
+  },
+  "conditions": [
+    { "type": "time_of_day", "min": 13000, "max": 23000 }
+  ]
+}
+```
 
 ## Event actions
 You can run actions on:

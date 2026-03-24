@@ -575,12 +575,18 @@ public final class RaidConfigLoader {
                 String biome,
                 String dimension,
                 int value,
+                @SerializedName(value = "count", alternate = {"required_count", "requiredCount"}) int count,
                 long cooldown_ticks,
                 int radius,
                 Center center,
                 List<Condition> conditions
         ) {
-            public record Center(String type, String structure, int search_radius, boolean prefer_nearest) {}
+            public record Center(
+                    String type,
+                    String structure,
+                    @SerializedName(value = "search_radius", alternate = {"searchRadius"}) int search_radius,
+                    @SerializedName(value = "prefer_nearest", alternate = {"preferNearest"}) boolean prefer_nearest
+            ) {}
             public record Condition(String type, int min, int max, int value, String biome, String dimension) {}
         }
 
@@ -856,22 +862,25 @@ public final class RaidConfigLoader {
                 return fromNbt;
             }
         }
-        return parseStartSettings(start);
+        return parseStartSettings(start, logger, file);
     }
 
-    private static RaidStartSettings parseStartSettings(RaidFile.Start start) {
+    private static RaidStartSettings parseStartSettings(RaidFile.Start start, Logger logger, Path file) {
         if (start == null) {
             return RaidStartSettings.DEFAULT;
         }
         String raw = firstNonBlank(start.type(), start.event());
         RaidStartSettings.Trigger trigger = parseTrigger(raw);
+        warnIfUnknownTrigger(raw, trigger, logger, file, "start");
         ResourceLocation entity = parseOptionalResourceLocation(start.entity());
         ResourceLocation item = parseOptionalResourceLocation(start.item());
         ResourceLocation structure = parseOptionalResourceLocation(start.structure());
         ResourceLocation biome = parseOptionalResourceLocation(start.biome());
         ResourceLocation dimension = parseOptionalResourceLocation(start.dimension());
-        List<RaidStartSettings.Condition> conditions = parseStartConditions(start.conditions());
-        return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, dimension, conditions, start.value());
+        RaidStartSettings.Center center = parseStartCenter(start.center(), structure, logger, file, "start.center");
+        List<RaidStartSettings.Condition> conditions = parseStartConditions(start.conditions(), logger, file, "start.conditions");
+        return new RaidStartSettings(trigger, start.cooldown_ticks(), entity, item, structure, biome, dimension,
+                conditions, start.value(), start.count(), start.radius(), center);
     }
 
     private static RaidStartSettings parseStartSettingsNbt(JsonElement startNbt, Logger logger, Path file) {
@@ -880,7 +889,9 @@ public final class RaidConfigLoader {
         }
         try {
             CompoundTag tag = RelaxedNbtParser.parseCompound(startNbt);
-            RaidStartSettings.Trigger trigger = parseTrigger(firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event")));
+            String raw = firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event"));
+            RaidStartSettings.Trigger trigger = parseTrigger(raw);
+            warnIfUnknownTrigger(raw, trigger, logger, file, "start_nbt");
             ResourceLocation entity = parseOptionalResourceLocation(getTagString(tag, "entity"));
             ResourceLocation item = parseOptionalResourceLocation(getTagString(tag, "item"));
             ResourceLocation structure = parseOptionalResourceLocation(getTagString(tag, "structure"));
@@ -888,8 +899,14 @@ public final class RaidConfigLoader {
             ResourceLocation dimension = parseOptionalResourceLocation(getTagString(tag, "dimension"));
             long cooldownTicks = getTagLong(tag, "cooldown_ticks");
             int value = getTagInt(tag, "value");
-            List<RaidStartSettings.Condition> conditions = parseStartConditions(tag.getList("conditions", Tag.TAG_COMPOUND));
-            return new RaidStartSettings(trigger, cooldownTicks, entity, item, structure, biome, dimension, conditions, value);
+            int count = getTagInt(tag, "count");
+            int radius = getTagInt(tag, "radius");
+            RaidStartSettings.Center center = parseStartCenter(tag.contains("center", Tag.TAG_COMPOUND) ? tag.getCompound("center") : null,
+                    structure, logger, file, "start_nbt.center");
+            List<RaidStartSettings.Condition> conditions = parseStartConditions(tag.getList("conditions", Tag.TAG_COMPOUND),
+                    logger, file, "start_nbt.conditions");
+            return new RaidStartSettings(trigger, cooldownTicks, entity, item, structure, biome, dimension,
+                    conditions, value, count, radius, center);
         } catch (CommandSyntaxException exception) {
             logger.warn("[Raidon] Invalid start_nbt in {}: {}", file.getFileName(), exception.getMessage());
             return null;
@@ -903,7 +920,47 @@ public final class RaidConfigLoader {
         return ResourceLocation.tryParse(value.trim());
     }
 
-    private static List<RaidStartSettings.Condition> parseStartConditions(List<RaidFile.Start.Condition> conditions) {
+    private static RaidStartSettings.Center parseStartCenter(RaidFile.Start.Center center, ResourceLocation fallbackStructure,
+                                                             Logger logger, Path file, String key) {
+        if (center == null) {
+            return RaidStartSettings.Center.DEFAULT;
+        }
+        RaidStartSettings.CenterType type = parseStartCenterType(center.type(), logger, file, key + ".type");
+        ResourceLocation structure = parseOptionalResourceLocation(center.structure());
+        if (type == RaidStartSettings.CenterType.STRUCTURE && structure == null && fallbackStructure == null) {
+            logger.warn("[Raidon] {} in {} uses structure center but structure is missing", key, file.getFileName());
+        }
+        return new RaidStartSettings.Center(type, structure, center.search_radius(), center.prefer_nearest());
+    }
+
+    private static RaidStartSettings.Center parseStartCenter(CompoundTag center, ResourceLocation fallbackStructure,
+                                                             Logger logger, Path file, String key) {
+        if (center == null || center.isEmpty()) {
+            return RaidStartSettings.Center.DEFAULT;
+        }
+        RaidStartSettings.CenterType type = parseStartCenterType(getTagString(center, "type"), logger, file, key + ".type");
+        ResourceLocation structure = parseOptionalResourceLocation(getTagString(center, "structure"));
+        if (type == RaidStartSettings.CenterType.STRUCTURE && structure == null && fallbackStructure == null) {
+            logger.warn("[Raidon] {} in {} uses structure center but structure is missing", key, file.getFileName());
+        }
+        return new RaidStartSettings.Center(type, structure, getTagInt(center, "search_radius"), getTagBoolean(center, "prefer_nearest"));
+    }
+
+    private static RaidStartSettings.CenterType parseStartCenterType(String raw, Logger logger, Path file, String key) {
+        String normalized = raw == null ? "" : raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "", "event", "player", "current", "origin", "trigger" -> RaidStartSettings.CenterType.EVENT;
+            case "spawn", "world_spawn", "worldspawn", "shared_spawn" -> RaidStartSettings.CenterType.WORLD_SPAWN;
+            case "structure", "nearest_structure" -> RaidStartSettings.CenterType.STRUCTURE;
+            default -> {
+                logger.warn("[Raidon] Unknown {} '{}' in {}. Falling back to event center.", key, raw, file.getFileName());
+                yield RaidStartSettings.CenterType.EVENT;
+            }
+        };
+    }
+
+    private static List<RaidStartSettings.Condition> parseStartConditions(List<RaidFile.Start.Condition> conditions,
+                                                                          Logger logger, Path file, String key) {
         if (conditions == null || conditions.isEmpty()) {
             return List.of();
         }
@@ -912,10 +969,15 @@ public final class RaidConfigLoader {
             if (condition == null || condition.type() == null || condition.type().isBlank()) {
                 continue;
             }
+            String type = normalizeStartConditionType(condition.type());
+            if (type == null) {
+                logger.warn("[Raidon] Unsupported {} '{}' in {}", key, condition.type(), file.getFileName());
+                continue;
+            }
             ResourceLocation biome = parseOptionalResourceLocation(condition.biome());
             ResourceLocation dimension = parseOptionalResourceLocation(condition.dimension());
             parsed.add(new RaidStartSettings.Condition(
-                    condition.type().trim().toLowerCase(),
+                    type,
                     condition.min(),
                     condition.max(),
                     condition.value(),
@@ -926,7 +988,7 @@ public final class RaidConfigLoader {
         return List.copyOf(parsed);
     }
 
-    private static List<RaidStartSettings.Condition> parseStartConditions(ListTag conditions) {
+    private static List<RaidStartSettings.Condition> parseStartConditions(ListTag conditions, Logger logger, Path file, String key) {
         if (conditions == null || conditions.isEmpty()) {
             return List.of();
         }
@@ -939,8 +1001,13 @@ public final class RaidConfigLoader {
             if (type == null || type.isBlank()) {
                 continue;
             }
+            String normalized = normalizeStartConditionType(type);
+            if (normalized == null) {
+                logger.warn("[Raidon] Unsupported {}[{}] '{}' in {}", key, i, type, file.getFileName());
+                continue;
+            }
             parsed.add(new RaidStartSettings.Condition(
-                    type.trim().toLowerCase(),
+                    normalized,
                     getTagInt(tag, "min"),
                     getTagInt(tag, "max"),
                     getTagInt(tag, "value"),
@@ -1047,6 +1114,7 @@ public final class RaidConfigLoader {
     private static RaidStartSettings.Trigger parseTrigger(String raw) {
         String normalized = raw == null ? "" : raw.trim().toLowerCase();
         return switch (normalized) {
+            case "enter_area", "on_enter_area", "area", "area_enter" -> RaidStartSettings.Trigger.ENTER_AREA;
             case "player_join", "player_join_any", "on_player_join", "player has join" -> RaidStartSettings.Trigger.PLAYER_JOIN_ANY;
             case "player has join in singleplay world", "player_join_singleplayer", "singleplayer_join" -> RaidStartSettings.Trigger.PLAYER_JOIN_SINGLEPLAYER;
             case "night", "night_fall", "on_night" -> RaidStartSettings.Trigger.NIGHT_FALL;
@@ -1061,6 +1129,33 @@ public final class RaidConfigLoader {
             case "on_sunset" -> RaidStartSettings.Trigger.ON_SUNSET;
             case "on_midnight" -> RaidStartSettings.Trigger.ON_MIDNIGHT;
             default -> RaidStartSettings.Trigger.MANUAL;
+        };
+    }
+
+    private static void warnIfUnknownTrigger(String raw, RaidStartSettings.Trigger parsed, Logger logger, Path file, String key) {
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        if (parsed != RaidStartSettings.Trigger.MANUAL) {
+            return;
+        }
+        if ("manual".equals(raw.trim().toLowerCase())) {
+            return;
+        }
+        logger.warn("[Raidon] Unknown {} trigger '{}' in {}. Falling back to manual.", key, raw, file.getFileName());
+    }
+
+    private static String normalizeStartConditionType(String raw) {
+        String normalized = raw == null ? "" : raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "min_players", "minplayers" -> "min_players";
+            case "max_players", "maxplayers" -> "max_players";
+            case "y_between", "ybetween" -> "y_between";
+            case "in_biome", "biome" -> "in_biome";
+            case "in_dimension", "dimension" -> "in_dimension";
+            case "time_of_day", "day_time", "timeofday" -> "time_of_day";
+            case "moon_phase", "moonphase" -> "moon_phase";
+            default -> null;
         };
     }
 
@@ -1085,6 +1180,10 @@ public final class RaidConfigLoader {
 
     private static long getTagLong(CompoundTag tag, String key) {
         return tag != null && tag.contains(key, Tag.TAG_ANY_NUMERIC) ? tag.getLong(key) : 0L;
+    }
+
+    private static boolean getTagBoolean(CompoundTag tag, String key) {
+        return tag != null && tag.contains(key, Tag.TAG_BYTE) && tag.getBoolean(key);
     }
 
     private static Integer getOptionalInt(CompoundTag tag, String key) {
