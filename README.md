@@ -36,6 +36,11 @@ Then yes, this library is for you.
       { "type": "y_between", "min": 60, "max": 90 }
     ]
   },
+  "on_raid_start": [
+    { "type": "title", "text": "Raid started!" },
+    { "type": "effect", "effect": "minecraft:resistance", "duration": 200, "amplifier": 0 },
+    { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 }
+  ],
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
