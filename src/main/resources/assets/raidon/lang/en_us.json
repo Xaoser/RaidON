@@ -1,6 +1,7 @@
 {
   "raidon.hud.wave": "Wave %s/%s",
   "raidon.hud.mobs": "Mobs left: %s/%s",
+  "raidon.command.start.busy": "Area is busy, raid is cancelled",
   "raidon.command.start.started": "Raid %s started at %s",
   "raidon.command.start.already_active": "Raid %s is already active.",
   "raidon.command.start.not_found": "Raid %s not found. Check config in config/raidon/raids/.",

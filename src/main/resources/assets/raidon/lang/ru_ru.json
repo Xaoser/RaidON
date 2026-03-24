@@ -2,6 +2,7 @@
   "raidon.hud.wave": "Волна %s/%s",
   "raidon.hud.mobs": "Мобы: %s/%s",
   "raidon.command.start.started": "Рейд %s запущен в %s",
+  "raidon.command.start.busy": "Место занято, рейд отменён",
   "raidon.command.start.already_active": "Рейд %s уже активен.",
   "raidon.command.start.not_found": "Рейд %s не найден. Проверьте конфиг в config/raidon/raids/.",
   "raidon.command.reload.failed": "Рейды перезагружены с ошибками: %s/%s",
