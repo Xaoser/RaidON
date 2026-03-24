@@ -120,7 +120,6 @@ public final class RaidConfigLoader {
 
     public static LoadReport load(MinecraftServer server, Logger logger) {
 
-        // Correct Forge config dir in 1.20.1
         Path baseDir = FMLPaths.CONFIGDIR.get().resolve("raidon").resolve("raids");
         logger.info("[Raidon] Loading raid configs from {}", baseDir.toAbsolutePath());
 
@@ -186,9 +185,6 @@ public final class RaidConfigLoader {
     }
 
 
-    /**
-     * @return true if the raid file was successfully loaded and registered.
-     */
     private static LoadIssue loadSingle(MinecraftServer server, Path file, Logger logger) {
         try (Reader reader = Files.newBufferedReader(file)) {
             RaidFile model = GSON.fromJson(reader, RaidFile.class);
@@ -204,7 +200,6 @@ public final class RaidConfigLoader {
             }
             boolean nbtSystemEnabled = parseBooleanFlag(model.nbt_system());
 
-            // Spawn settings
             RaidSpawnSettings spawnSettings = model.spawn() == null
                     ? RaidSpawnSettings.defaults()
                     : new RaidSpawnSettings(
@@ -230,7 +225,6 @@ public final class RaidConfigLoader {
 
             List<DropEntry> globalDrops = parseDrops(model.drops() == null ? null : model.drops().global(), logger, file);
 
-            // Build raid
             RaidBuilder builder = new RaidBuilder(id)
                     .difficulty((float) model.difficulty())
                     .endAction(buildActions(raidEndActions))
@@ -240,7 +234,7 @@ public final class RaidConfigLoader {
 
             for (int i = 0; i < waves.size(); i++) {
                 RaidFile.Wave wave = waves.get(i);
-                final int waveIndex = i; // ← ВАЖНО
+                final int waveIndex = i;
 
                 List<RaidFile.Mob> mobs = wave.mobs() == null ? List.of() : wave.mobs();
                 if (mobs.isEmpty()) {
@@ -478,7 +472,6 @@ public final class RaidConfigLoader {
 
 
 
-    // ===== JSON model =====
     private record ParsedMob(
             int count,
             EntityType<? extends Mob> type,
@@ -620,7 +613,6 @@ public final class RaidConfigLoader {
                         return new RaidPointSettings.PointTemplate(x, y, z);
                     }
                 } catch (Exception ignored) {
-                    // handled below
                 }
             }
         }
@@ -635,7 +627,6 @@ public final class RaidConfigLoader {
                     return new RaidPointSettings.PointTemplate(x, y, z);
                 }
             } catch (Exception ignored) {
-                // handled below
             }
         }
 
@@ -651,7 +642,6 @@ public final class RaidConfigLoader {
                         return new RaidPointSettings.PointTemplate(x, y, z);
                     }
                 } catch (Exception ignored) {
-                    // handled below
                 }
             }
         }
@@ -763,7 +753,6 @@ public final class RaidConfigLoader {
                 height = value.getAsJsonArray().get(1).getAsInt();
                 return new int[]{width, height};
             } catch (Exception ignored) {
-                // handled below
             }
         }
 
@@ -775,7 +764,6 @@ public final class RaidConfigLoader {
                     height = Integer.parseInt(parts[1]);
                     return new int[]{width, height};
                 } catch (NumberFormatException ignored) {
-                    // handled below
                 }
             }
         }

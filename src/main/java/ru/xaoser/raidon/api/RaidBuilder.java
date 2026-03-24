@@ -4,27 +4,31 @@ import net.minecraft.resources.ResourceLocation;
 import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.RaidAction;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 
 public final class RaidBuilder {
     private final ResourceLocation id;
 
-    // waves по индексу, чтобы addWave(1) работал “точно”
+    /** Stores waves by index. */
     private final Map<Integer, WaveBuilder> waves = new TreeMap<>();
 
-    private float difficulty = 0.0F; // 0..10
+    private float difficulty = 0.0F;
     private RaidAction endAction = ctx -> {};
     private List<DropEntry> globalDrops = List.of();
 
-    // индекс “по порядку” для addWave(Consumer)
+    /** Tracks the next free wave index. */
     private int nextIndex = 0;
 
     public RaidBuilder(ResourceLocation id) {
         this.id = Objects.requireNonNull(id, "id");
     }
 
-    // Create and configure Wave
+    /** Adds a wave at the next free index. */
     public RaidBuilder addWave(Consumer<WaveBuilder> config) {
         Objects.requireNonNull(config, "config");
         int idx = nextIndex++;
@@ -33,16 +37,15 @@ public final class RaidBuilder {
         return this;
     }
 
-    // Creating empty Wave (you can add a content with wave(int index, ....)
+    /** Reserves an empty wave slot. */
     public RaidBuilder addWave(int index) {
         if (index < 0) throw new IllegalArgumentException("Wave index must be >= 0");
         waves.computeIfAbsent(index, WaveBuilder::new);
-        // nextIndex двигаем вперёд, чтобы “по порядку” не пересекалось
         nextIndex = Math.max(nextIndex, index + 1);
         return this;
     }
 
-    // Add a content to empty Wave
+    /** Configures a wave at a specific index. */
     public RaidBuilder wave(int index, Consumer<WaveBuilder> config) {
         if (index < 0) throw new IllegalArgumentException("Wave index must be >= 0");
         Objects.requireNonNull(config, "config");
@@ -52,21 +55,22 @@ public final class RaidBuilder {
         return this;
     }
 
-    // Difficulty scale a HP and damage
+    /** Sets raid difficulty in the 0..10 range. */
     public RaidBuilder difficulty(float value) {
-        if (Float.isNaN(value) || Float.isInfinite(value))
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
             throw new IllegalArgumentException("Difficulty must be a finite number");
+        }
         this.difficulty = clamp(value, 0.0F, 10.0F);
         return this;
     }
 
-    // Action after end of Raid
+    /** Sets the action that runs after the raid ends. */
     public RaidBuilder endAction(RaidAction action) {
         this.endAction = Objects.requireNonNull(action, "action");
         return this;
     }
 
-    // Drops from all mobs of Raid
+    /** Sets drops shared by all raid mobs. */
     public RaidBuilder globalDrops(List<DropEntry> drops) {
         this.globalDrops = drops == null ? List.of() : List.copyOf(drops);
         return this;
@@ -78,8 +82,8 @@ public final class RaidBuilder {
         }
 
         List<RaidWave> builtWaves = new ArrayList<>();
-        for (var e : waves.entrySet()) {
-            builtWaves.add(e.getValue().build());
+        for (Map.Entry<Integer, WaveBuilder> entry : waves.entrySet()) {
+            builtWaves.add(entry.getValue().build());
         }
 
         return new Raid(id, builtWaves, difficulty, endAction, globalDrops);

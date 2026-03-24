@@ -43,6 +43,7 @@ public class Raidon {
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.info("RaidON is initialized, have a nice day!");
         RaidConfigLoader.load(event.getServer(), LOGGER);
+        RaidManager.restoreActiveRaids(event.getServer());
         RaidonCommand.registerDispatcher(event.getServer().getCommands().getDispatcher());
     }
 

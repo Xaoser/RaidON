@@ -4,6 +4,8 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -24,6 +26,7 @@ import ru.xaoser.raidon.api.RaidWave;
 import ru.xaoser.raidon.api.sup.DropEntry;
 import ru.xaoser.raidon.api.sup.MobEntry;
 import ru.xaoser.raidon.api.sup.MobTraits;
+import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
@@ -56,8 +59,7 @@ class ActiveRaid implements RaidRuntime {
     private final Map<Integer, List<UUID>> waveMobs = new HashMap<>();
     private final Map<Integer, Integer> waveTotals = new HashMap<>();
     private final Map<Integer, List<PendingSpawn>> pendingMobs = new HashMap<>();
-    private final Map<UUID, List<DropEntry>> mobDrops = new HashMap<>();
-    private final Map<UUID, MobTraits> mobTunings = new HashMap<>();
+    private final Map<UUID, TrackedMobState> trackedMobStates = new HashMap<>();
     private int lastSentAlive = -1;
     private int lastSentWave = -2;
     private boolean completed = false;
@@ -116,15 +118,7 @@ class ActiveRaid implements RaidRuntime {
 
     @Override
     public int aliveMobsInCurrentWave() {
-        List<UUID> ids = waveMobs.getOrDefault(currentWaveIndex, List.of());
-        int alive = 0;
-        for (UUID id : ids) {
-            Entity e = level.getEntity(id);
-            if (e != null && e.isAlive()) {
-                alive++;
-            }
-        }
-        return alive;
+        return waveMobs.getOrDefault(currentWaveIndex, List.of()).size();
     }
 
     private void startWave(int waveIndex) {
@@ -245,9 +239,10 @@ class ActiveRaid implements RaidRuntime {
     private void preparePendingWave(int waveKey, RaidWave wave) {
         List<PendingSpawn> pending = new ArrayList<>();
         int total = 0;
-        for (MobEntry entry : wave.mobs()) {
+        for (int i = 0; i < wave.mobs().size(); i++) {
+            MobEntry entry = wave.mobs().get(i);
             pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(),
-                    entry.targeting(), entry.tuning(), entry.nbtData(), entry.count()));
+                    entry.targeting(), entry.tuning(), entry.nbtData(), i, entry.count()));
             total += entry.count();
         }
         pendingMobs.put(waveKey, pending);
@@ -272,7 +267,11 @@ class ActiveRaid implements RaidRuntime {
         SpawnAttemptResult attempt = spawnPendingMobs(waveKey, wave, level.getRandom());
         if (attempt.spawnedCount() > 0) {
             List<UUID> spawned = waveMobs.computeIfAbsent(waveKey, key -> new ArrayList<>());
-            spawned.addAll(attempt.spawned());
+            for (UUID id : attempt.spawned()) {
+                if (!spawned.contains(id)) {
+                    spawned.add(id);
+                }
+            }
             LOGGER.info("[Raidon][{}] pending spawn wave={} plannedLeft={} created={} spawned={} posNull={} addFailed={}",
                     raid.id(), wave.index(), pendingCount(waveKey), attempt.created(), attempt.spawnedCount(),
                     attempt.posNull(), attempt.addFailed());
@@ -312,24 +311,19 @@ class ActiveRaid implements RaidRuntime {
                 mob.moveTo(pos, random.nextFloat() * 360.0F, 0.0F);
                 mob.setPersistenceRequired();
                 mob.addTag(MobAiHelper.RAID_MOB_TAG);
+                UUID mobId = mob.getUUID();
+                trackedMobStates.put(mobId, new TrackedMobState(waveKey, entry.mobIndex()));
                 if (entry.tuning().usesRaidAi()) {
                     MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(),
                             raidTargetPoint, mobWanderRadius, spawnPoint);
                 }
                 if (level.addFreshEntity(mob)) {
-                    spawned.add(mob.getUUID());
+                    spawned.add(mobId);
                     spawnedCount++;
                     entry.decrement();
-                    List<DropEntry> mergedDrops = new ArrayList<>(raid.globalDrops());
-                    mergedDrops.addAll(entry.drops());
-                    if (!mergedDrops.isEmpty()) {
-                        mobDrops.put(mob.getUUID(), List.copyOf(mergedDrops));
-                    }
                     quota--;
-                    if (!entry.tuning().isDefault()) {
-                        mobTunings.put(mob.getUUID(), entry.tuning());
-                    }
                 } else {
+                    trackedMobStates.remove(mobId);
                     addFailed++;
                 }
             }
@@ -428,25 +422,22 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private void despawnTracked() {
-        for (List<UUID> ids : waveMobs.values()) {
-            for (UUID id : ids) {
-                Entity entity = level.getEntity(id);
-                if (entity instanceof Mob mob) {
-                    mob.discard();
-                }
+        for (UUID id : trackedMobStates.keySet()) {
+            Entity entity = level.getEntity(id);
+            if (entity instanceof Mob mob) {
+                mob.discard();
             }
         }
         waveMobs.clear();
         pendingMobs.clear();
-        mobDrops.clear();
-        mobTunings.clear();
+        trackedMobStates.clear();
     }
 
     boolean handleMobDeath(Mob mob) {
         UUID id = mob.getUUID();
+        TrackedMobState trackedState = trackedMobStates.get(id);
         boolean tracked = removeTrackedMob(id);
-        List<DropEntry> drops = mobDrops.remove(id);
-        mobTunings.remove(id);
+        List<DropEntry> drops = trackedState == null ? List.of() : mergedDrops(trackedState);
         if (drops != null && !drops.isEmpty()) {
             dropLoot(drops, mob.blockPosition(), level.getRandom());
         }
@@ -454,14 +445,18 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private boolean removeTrackedMob(UUID id) {
-        boolean removed = false;
-        for (List<UUID> ids : waveMobs.values()) {
-            if (ids.remove(id)) {
-                removed = true;
-                break;
+        TrackedMobState trackedState = trackedMobStates.remove(id);
+        if (trackedState == null) {
+            return false;
+        }
+        List<UUID> ids = waveMobs.get(trackedState.waveIndex());
+        if (ids != null) {
+            ids.remove(id);
+            if (ids.isEmpty()) {
+                waveMobs.remove(trackedState.waveIndex());
             }
         }
-        return removed;
+        return true;
     }
 
     private void completeRaid() {
@@ -513,12 +508,12 @@ class ActiveRaid implements RaidRuntime {
     }
 
     private void tickMobTunings() {
-        for (Map.Entry<UUID, MobTraits> entry : mobTunings.entrySet()) {
+        for (Map.Entry<UUID, TrackedMobState> entry : trackedMobStates.entrySet()) {
             Entity entity = level.getEntity(entry.getKey());
             if (!(entity instanceof Mob mob) || !mob.isAlive()) {
                 continue;
             }
-            MobTraits tuning = entry.getValue();
+            MobTraits tuning = mobEntry(entry.getValue()).tuning();
             if (Boolean.FALSE.equals(tuning.burnInSun()) && level.isDay() && level.canSeeSky(mob.blockPosition())) {
                 mob.clearFire();
             }
@@ -563,6 +558,146 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
+    CompoundTag saveState() {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("id", raid.id().toString());
+        tag.putString("dimension", level.dimension().location().toString());
+        tag.putIntArray("center", new int[]{center.getX(), center.getY(), center.getZ()});
+        tag.putIntArray("spawnPoint", new int[]{spawnPoint.getX(), spawnPoint.getY(), spawnPoint.getZ()});
+        tag.putIntArray("raidTargetPoint", new int[]{raidTargetPoint.getX(), raidTargetPoint.getY(), raidTargetPoint.getZ()});
+        tag.putInt("mobWanderRadius", mobWanderRadius);
+        tag.putInt("currentWaveIndex", currentWaveIndex);
+        tag.putInt("remainingRespawnAttempts", remainingRespawnAttempts);
+
+        ListTag tracked = new ListTag();
+        for (Map.Entry<UUID, TrackedMobState> entry : trackedMobStates.entrySet()) {
+            CompoundTag mob = new CompoundTag();
+            mob.putUUID("uuid", entry.getKey());
+            mob.putInt("wave", entry.getValue().waveIndex());
+            mob.putInt("mobIndex", entry.getValue().mobIndex());
+            tracked.add(mob);
+        }
+        tag.put("trackedMobs", tracked);
+
+        ListTag pending = new ListTag();
+        List<PendingSpawn> currentPending = pendingMobs.get(currentWaveIndex);
+        if (currentPending != null) {
+            for (PendingSpawn spawn : currentPending) {
+                CompoundTag pendingTag = new CompoundTag();
+                pendingTag.putInt("mobIndex", spawn.mobIndex());
+                pendingTag.putInt("remaining", spawn.remaining());
+                pending.add(pendingTag);
+            }
+        }
+        tag.put("pendingMobs", pending);
+        return tag;
+    }
+
+    boolean restoreState(CompoundTag tag) {
+        int waveIndex = tag.getInt("currentWaveIndex");
+        if (waveIndex < -1 || waveIndex >= raid.waves().size()) {
+            LOGGER.warn("[Raidon][{}] Skipping invalid saved wave index {}", raid.id(), waveIndex);
+            return false;
+        }
+
+        currentWaveIndex = waveIndex;
+        remainingRespawnAttempts = tag.contains("remainingRespawnAttempts", Tag.TAG_INT)
+                ? tag.getInt("remainingRespawnAttempts")
+                : MAX_RESPAWN_ATTEMPTS;
+        waveMobs.clear();
+        pendingMobs.clear();
+        trackedMobStates.clear();
+        waveTotals.clear();
+
+        if (currentWaveIndex >= 0) {
+            RaidWave wave = raid.waves().get(currentWaveIndex);
+            waveTotals.put(currentWaveIndex, wave.mobs().stream().mapToInt(MobEntry::count).sum());
+            List<PendingSpawn> pending = restorePendingWave(wave, tag.getList("pendingMobs", Tag.TAG_COMPOUND));
+            if (!pending.isEmpty()) {
+                pendingMobs.put(currentWaveIndex, pending);
+            }
+        }
+
+        ListTag tracked = tag.getList("trackedMobs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < tracked.size(); i++) {
+            CompoundTag mobTag = tracked.getCompound(i);
+            if (!mobTag.hasUUID("uuid")) {
+                continue;
+            }
+            UUID uuid = mobTag.getUUID("uuid");
+            TrackedMobState state = new TrackedMobState(mobTag.getInt("wave"), mobTag.getInt("mobIndex"));
+            if (!isValidTrackedMobState(state)) {
+                continue;
+            }
+            trackedMobStates.put(uuid, state);
+            waveMobs.computeIfAbsent(state.waveIndex(), key -> new ArrayList<>()).add(uuid);
+        }
+        return true;
+    }
+
+    boolean tracksMob(UUID uuid) {
+        return trackedMobStates.containsKey(uuid);
+    }
+
+    boolean rebindTrackedMob(Mob mob) {
+        TrackedMobState state = trackedMobStates.get(mob.getUUID());
+        if (state == null) {
+            return false;
+        }
+        MobEntry entry = mobEntry(state);
+        if (!mob.getTags().contains(MobAiHelper.RAID_MOB_TAG)) {
+            mob.addTag(MobAiHelper.RAID_MOB_TAG);
+        }
+        mob.setPersistenceRequired();
+        applyMobTuning(mob, entry.tuning());
+        if (entry.tuning().usesRaidAi()) {
+            MobAiHelper.applyBehavior(mob, entry.behavior(), entry.targeting(), entry.tuning(),
+                    raidTargetPoint, mobWanderRadius, spawnPoint);
+        }
+        waveMobs.computeIfAbsent(state.waveIndex(), key -> new ArrayList<>());
+        List<UUID> ids = waveMobs.get(state.waveIndex());
+        if (!ids.contains(mob.getUUID())) {
+            ids.add(mob.getUUID());
+        }
+        return true;
+    }
+
+    private List<PendingSpawn> restorePendingWave(RaidWave wave, ListTag pendingTags) {
+        List<PendingSpawn> pending = new ArrayList<>();
+        if (pendingTags == null || pendingTags.isEmpty()) {
+            return pending;
+        }
+        for (int i = 0; i < pendingTags.size(); i++) {
+            CompoundTag pendingTag = pendingTags.getCompound(i);
+            int mobIndex = pendingTag.getInt("mobIndex");
+            int remaining = pendingTag.getInt("remaining");
+            if (remaining <= 0 || mobIndex < 0 || mobIndex >= wave.mobs().size()) {
+                continue;
+            }
+            MobEntry entry = wave.mobs().get(mobIndex);
+            pending.add(new PendingSpawn(entry.type(), entry.behavior(), entry.baseDamage(), entry.drops(),
+                    entry.targeting(), entry.tuning(), entry.nbtData(), mobIndex, remaining));
+        }
+        return pending;
+    }
+
+    private boolean isValidTrackedMobState(TrackedMobState state) {
+        return state.waveIndex() >= 0
+                && state.waveIndex() < raid.waves().size()
+                && state.mobIndex() >= 0
+                && state.mobIndex() < raid.waves().get(state.waveIndex()).mobs().size();
+    }
+
+    private MobEntry mobEntry(TrackedMobState state) {
+        return raid.waves().get(state.waveIndex()).mobs().get(state.mobIndex());
+    }
+
+    private List<DropEntry> mergedDrops(TrackedMobState state) {
+        List<DropEntry> drops = new ArrayList<>(raid.globalDrops());
+        drops.addAll(mobEntry(state).drops());
+        return drops;
+    }
+
     private static float difficultyMultiplier(float difficulty) {
         if (difficulty <= 1.0F) {
             return 0.5F;
@@ -576,6 +711,8 @@ class ActiveRaid implements RaidRuntime {
         }
     }
 
+    private record TrackedMobState(int waveIndex, int mobIndex) {}
+
     private record SpawnAttemptResult(List<UUID> spawned, int created, int spawnedCount, int posNull, int addFailed) {}
 
     private static final class PendingSpawn {
@@ -586,10 +723,12 @@ class ActiveRaid implements RaidRuntime {
         private final ru.xaoser.raidon.api.sup.MobTargeting targeting;
         private final MobTraits tuning;
         private final String nbtData;
+        private final int mobIndex;
         private int remaining;
 
         private PendingSpawn(EntityType<? extends Mob> type, SpawnBehavior behavior, Float baseDamage, List<DropEntry> drops,
-                             ru.xaoser.raidon.api.sup.MobTargeting targeting, MobTraits tuning, String nbtData, int remaining) {
+                             ru.xaoser.raidon.api.sup.MobTargeting targeting, MobTraits tuning, String nbtData,
+                             int mobIndex, int remaining) {
             this.type = type;
             this.behavior = behavior;
             this.baseDamage = baseDamage;
@@ -597,6 +736,7 @@ class ActiveRaid implements RaidRuntime {
             this.targeting = targeting == null ? ru.xaoser.raidon.api.sup.MobTargeting.defaults() : targeting;
             this.tuning = tuning == null ? MobTraits.defaults() : tuning;
             this.nbtData = nbtData == null || nbtData.isBlank() ? null : nbtData.trim();
+            this.mobIndex = mobIndex;
             this.remaining = remaining;
         }
 
@@ -626,6 +766,10 @@ class ActiveRaid implements RaidRuntime {
 
         private String nbtData() {
             return nbtData;
+        }
+
+        private int mobIndex() {
+            return mobIndex;
         }
 
         private int remaining() {

@@ -18,9 +18,7 @@ public final class WaveBuilder {
 
     private final List<MobEntry> mobs = new ArrayList<>();
     private int spawnRadius = 16;
-
     private WaveCompleteCondition completeCondition = (rt, ctx) -> rt.aliveMobsInCurrentWave() <= 0;
-
     private RaidAction onWaveStart = ctx -> {};
     private RaidAction onWaveEnd = ctx -> {};
 
@@ -99,13 +97,13 @@ public final class WaveBuilder {
         return this;
     }
 
-    // Raid ends when all mobs are dead
+    /** Uses the default all-dead completion rule. */
     public WaveBuilder completeWhenAllDead() {
         this.completeCondition = (rt, ctx) -> rt.aliveMobsInCurrentWave() <= 0;
         return this;
     }
 
-    // Custom complete condition
+    /** Sets a custom completion rule for the wave. */
     public WaveBuilder completeCondition(WaveCompleteCondition condition) {
         this.completeCondition = Objects.requireNonNull(condition, "condition");
         return this;

@@ -9,7 +9,7 @@ import java.util.List;
 public final class Raid {
     private final ResourceLocation id;
     private final List<RaidWave> waves;
-    private final float difficulty; // 0..10
+    private final float difficulty;
     private final RaidAction endAction;
     private final List<DropEntry> globalDrops;
 

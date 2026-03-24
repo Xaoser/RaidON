@@ -27,7 +27,6 @@ import ru.xaoser.raidon.api.sup.RaidRuntime;
 import java.util.*;
 
 
-   //Central raid runtime that owns registrations and active raid lifecycles.
 
 public final class RaidManager {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -45,7 +44,6 @@ public final class RaidManager {
         return INSTANCE;
     }
 
-    //Register event listeners only once.
     public void init() {
         if (!registeredOnBus) {
             MinecraftForge.EVENT_BUS.register(this);
@@ -54,7 +52,6 @@ public final class RaidManager {
         }
     }
 
-    // Register a new raid definition.
     public void registerRaid(Raid raid) {
         Objects.requireNonNull(raid, "raid");
         Raid existing = registeredRaids.putIfAbsent(raid.id(), raid);
@@ -63,7 +60,6 @@ public final class RaidManager {
         }
     }
 
-    //Start a raid by id if it was registered.
     public Optional<ActiveRaid> startRaid(ResourceLocation id, ServerLevel level, BlockPos center) {
         Raid definition = registeredRaids.get(id);
         if (definition == null) {
@@ -78,7 +74,6 @@ public final class RaidManager {
         return Optional.of(raid);
     }
 
-    //Tick all active raids and prune those that finished.
     private void tickActiveRaids() {
         Iterator<ActiveRaid> it = activeRaids.iterator();
         while (it.hasNext()) {
@@ -90,13 +85,11 @@ public final class RaidManager {
         }
     }
 
-    //Remove raids running in an unloading level.
     private void dropForLevel(Level level) {
         if (!(level instanceof ServerLevel serverLevel)) return;
         activeRaids.removeIf(raid -> raid.isInLevel(serverLevel));
     }
 
-    //Remove raids that no longer have any nearby players.
     private void dropEmptyRaids(ServerLevel level) {
         Iterator<ActiveRaid> it = activeRaids.iterator();
         while (it.hasNext()) {
@@ -142,7 +135,6 @@ public final class RaidManager {
         }
     }
 
-    //Active raid runtime that owns progression.
     public static final class ActiveRaid implements RaidRuntime {
         private static final double DEFAULT_AREA_RADIUS = 64.0D;
 

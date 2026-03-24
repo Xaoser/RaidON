@@ -5,9 +5,6 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Optional metadata used to validate whether a raid is allowed to start.
- */
 public record RaidStartConditions(int minPlayers, boolean requireNight, List<ResourceLocation> allowedBiomes) {
     public static final RaidStartConditions DEFAULT = new RaidStartConditions(1, false, List.of());
 

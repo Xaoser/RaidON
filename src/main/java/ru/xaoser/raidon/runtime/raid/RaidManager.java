@@ -2,16 +2,19 @@ package ru.xaoser.raidon.runtime.raid;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.TradeWithVillagerEvent;
-import net.minecraft.core.registries.Registries;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
@@ -20,6 +23,7 @@ import ru.xaoser.raidon.Raidon;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
+import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
 import java.util.*;
 
@@ -34,6 +38,7 @@ public final class RaidManager {
     private static int activeTickCursor = 0;
     private static final Map<ResourceLocation, Long> AUTO_LAST_START = new HashMap<>();
     private static final Map<UUID, ResourceLocation> LAST_PLAYER_BIOME = new HashMap<>();
+    private static boolean activeStateRestored = false;
 
     private RaidManager() {}
 
@@ -46,6 +51,7 @@ public final class RaidManager {
         activeTickCursor = 0;
         AUTO_LAST_START.clear();
         LAST_PLAYER_BIOME.clear();
+        activeStateRestored = false;
     }
 
     public static void registerRaid(ResourceLocation id, Raid raid, RaidSpawnSettings spawnSettings,
@@ -70,6 +76,7 @@ public final class RaidManager {
                 points.mobWanderRadius(), loaded.spawnSettings(), loaded.guiSettings());
         ACTIVE.put(id, active);
         ACTIVE_TICK_ORDER.add(id);
+        persistActiveState(level.getServer());
         LOGGER.info("Started raid {} center={} spawn={} target={} wanderRadius={}", id, points.mainPoint(), points.spawnPoint(), points.raidTargetPoint(), points.mobWanderRadius());
         sendProgress(active, false);
         return StartResult.STARTED;
@@ -83,6 +90,7 @@ public final class RaidManager {
             activeTickCursor = 0;
         }
         raid.forceComplete();
+        persistActiveState(raid.level().getServer());
         sendProgress(raid, true);
         LOGGER.info("Raid {} was force-finished", id);
         return true;
@@ -144,6 +152,27 @@ public final class RaidManager {
     public static Map<ResourceLocation, LoadedRaid> raidsView() { return Map.copyOf(RAIDS); }
     public static Map<ResourceLocation, ActiveRaid> activeView() { return Map.copyOf(ACTIVE); }
 
+    public static void restoreActiveRaids(MinecraftServer server) {
+        ACTIVE.clear();
+        ACTIVE_TICK_ORDER.clear();
+        activeTickCursor = 0;
+
+        for (CompoundTag tag : RaidSavedData.get(server).activeRaidTags()) {
+            ActiveRaid raid = restoreActiveRaid(server, tag);
+            if (raid == null) {
+                continue;
+            }
+            ResourceLocation id = raid.raidId();
+            ACTIVE.put(id, raid);
+            ACTIVE_TICK_ORDER.add(id);
+            LOGGER.info("Restored raid {} center={} wave={}", id, raid.center(), raid.currentWaveZeroBased());
+        }
+
+        activeStateRestored = true;
+        rebindLoadedRaidMobs(server);
+        persistActiveState(server);
+    }
+
     public static List<ActiveRaidStatus> activeStatuses() {
         List<ActiveRaidStatus> list = new ArrayList<>();
         for (var entry : ACTIVE.entrySet()) {
@@ -158,6 +187,7 @@ public final class RaidManager {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         tickAll();
+        persistActiveState(event.getServer());
         autoStartByTick(event.getServer());
         autoStartByPlayerTick(event.getServer());
         syncAllPlayers();
@@ -168,6 +198,27 @@ public final class RaidManager {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         autoStartOnLogin(player);
         syncPlayer(player);
+    }
+
+    @SubscribeEvent
+    public static void onEntityJoin(EntityJoinLevelEvent event) {
+        if (!activeStateRestored) {
+            return;
+        }
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        if (!(event.getEntity() instanceof net.minecraft.world.entity.Mob mob)) {
+            return;
+        }
+        if (!mob.getTags().contains(MobAiHelper.RAID_MOB_TAG)) {
+            return;
+        }
+        if (rebindRaidMob(level, mob)) {
+            return;
+        }
+        mob.discard();
+        LOGGER.info("Discarded stale raid mob {} because no active raid tracks it", mob.getUUID());
     }
 
     @SubscribeEvent
@@ -375,6 +426,81 @@ public final class RaidManager {
         long last = AUTO_LAST_START.getOrDefault(id, Long.MIN_VALUE / 2L);
         if (tick - last < cooldown) return;
         if (startRaid(id, level, center).isStarted()) AUTO_LAST_START.put(id, tick);
+    }
+
+    private static void persistActiveState(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        RaidSavedData.get(server).replaceFromActive(ACTIVE.values());
+    }
+
+    private static ActiveRaid restoreActiveRaid(MinecraftServer server, CompoundTag tag) {
+        ResourceLocation id = ResourceLocation.tryParse(tag.getString("id"));
+        ResourceLocation dimensionId = ResourceLocation.tryParse(tag.getString("dimension"));
+        if (id == null || dimensionId == null) {
+            LOGGER.warn("Skipping saved raid with invalid id or dimension");
+            return null;
+        }
+        LoadedRaid loaded = RAIDS.get(id);
+        if (loaded == null) {
+            LOGGER.warn("Skipping saved raid {} because definition is missing", id);
+            return null;
+        }
+        ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION, dimensionId));
+        if (level == null) {
+            LOGGER.warn("Skipping saved raid {} because level {} is missing", id, dimensionId);
+            return null;
+        }
+        BlockPos center = readBlockPos(tag, "center");
+        BlockPos spawnPoint = readBlockPos(tag, "spawnPoint");
+        BlockPos raidTargetPoint = readBlockPos(tag, "raidTargetPoint");
+        int mobWanderRadius = Math.max(4, tag.getInt("mobWanderRadius"));
+
+        ActiveRaid active = new ActiveRaid(loaded.raid(), level, center, spawnPoint, raidTargetPoint,
+                mobWanderRadius, loaded.spawnSettings(), loaded.guiSettings());
+        if (!active.restoreState(tag)) {
+            return null;
+        }
+        return active;
+    }
+
+    private static BlockPos readBlockPos(CompoundTag tag, String key) {
+        int[] values = tag.getIntArray(key);
+        if (values.length >= 3) {
+            return new BlockPos(values[0], values[1], values[2]);
+        }
+        return BlockPos.ZERO;
+    }
+
+    private static void rebindLoadedRaidMobs(MinecraftServer server) {
+        for (ServerLevel level : server.getAllLevels()) {
+            for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
+                if (!(entity instanceof net.minecraft.world.entity.Mob mob)) {
+                    continue;
+                }
+                if (!mob.getTags().contains(MobAiHelper.RAID_MOB_TAG)) {
+                    continue;
+                }
+                if (rebindRaidMob(level, mob)) {
+                    continue;
+                }
+                mob.discard();
+                LOGGER.info("Discarded stale loaded raid mob {} because no active raid tracks it", mob.getUUID());
+            }
+        }
+    }
+
+    private static boolean rebindRaidMob(ServerLevel level, net.minecraft.world.entity.Mob mob) {
+        for (ActiveRaid raid : ACTIVE.values()) {
+            if (raid.level() != level) {
+                continue;
+            }
+            if (raid.rebindTrackedMob(mob)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasActiveRaidConflict(ServerLevel level, BlockPos center, double requestedRadius) {

@@ -1,151 +1,173 @@
 # RaidON library
 
-THIS IS A ALPHA VERSION OF LIBRARY!!!
-If you found a bug, error or suggestion for improvement, plz write me about it in discord: xaoser
+THIS IS STILL ALPHA LIBRARY!!!
+If you found bug, strange thing, cursed chicken invasion or just have idea for better stuff, write me in discord: `xaoser`
 
-Do you want to make a zombie apocalypse or just make some kind of event?, then this library is just for you!, here you can even make an invasion of CHICKENS!
+Do you want zombie apocalypse?
+Do you want village event?
+Do you want 200 angry chickens running to player?
+Then yes, this library is for you.
 
-## What can this mod?
-- Loads JSON raids from `config/raidon/raids/*.json'.
-- Launches raids with commands and via the Java API.
-- Render the raid HUD (waves/mobs/progress), including custom GUI textures, put textures to `config/raidon/gui/*.png`.
-- Provide EPIC invasion for your soul!
-- Change mob's AI for aggressive or else
-- Help to create Raid into other mods with API
-- Create example raid config in config folder
-- Not baking a cookie(
+## What this mod can do?
+- Load raids from `config/raidon/raids/*.json`
+- Support 2 config styles:
+  `normal json system`
+  `nbt_system: "true"`
+- Start raids from commands
+- Start raids from Java API
+- Show raid HUD with custom textures from `config/raidon/gui/*.png`
+- Spawn mobs with custom AI and custom target logic
+- Let raid mobs chase targets outside gather zone, but still keep hard border
+- Save active raids in world data
+- Restore active raids after rejoin/restart
+- Restore raid mob logic after chunk unload / player goes far away
+- Let API users disable built-in raid AI and use own logic
+- Add custom mob NBT
+- Add start triggers and end actions in normal JSON and in NBT system too
+- Give EPIC invasion for your soul
+- Not baking a cookie
 
+## Important thing
+Raid mobs now are not becoming random vanilla mobs after player go far away.
+If raid is still active, mob will restore raid logic after chunk/entity load.
+If raid is gone, stale raid mobs will be cleaned, not stay in world like обычный мусор mob.
 
-## Example raid config:
+## Example raid config
 ```json
 {
   "id": "raidon:example_raid",
   "difficulty": 2,
   "start": {
-  "event": "on_kill",
-  "entity": "minecraft:zombie",
-  "conditions": [
-    { "type": "min_players", "value": 2 },
-    { "type": "in_biome", "biome": "minecraft:plains" },
-    { "type": "in_dimension", "dimension": "minecraft:overworld" },
-    { "type": "y_between", "min": 60, "max": 90 }
-  ]
-}
+    "event": "on_kill",
+    "entity": "minecraft:zombie",
+    "conditions": [
+      { "type": "min_players", "value": 2 },
+      { "type": "in_biome", "biome": "minecraft:plains" },
+      { "type": "in_dimension", "dimension": "minecraft:overworld" },
+      { "type": "y_between", "min": 60, "max": 90 }
+    ]
+  },
   "points": {
-    "mainpoint": {"x": 0, "y": 70, "z": 0},
-    "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
-    "raidpoint": {"x": 0, "y": 70, "z": 0}
+    "mainpoint": { "x": 0, "y": 70, "z": 0 },
+    "raidspawnpoint": { "x": 64, "y": 70, "z": 64 },
+    "raidpoint": { "x": 0, "y": 70, "z": 0 },
+    "mob_wander_radius": 50
   },
   "gui": {
-    "size": "120, 40"
+    "size": "120,40"
   },
-  "drops": { "global": [
-    { "item": "minecraft:iron_ingot", "min": 0, "max": 1, "chance": 100 },
-    { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 0.25 }
-  ]
+  "spawn": {
+    "min_radius": 18,
+    "max_radius": 60,
+    "attempts_per_mob": 12,
+    "require_ground": true,
+    "avoid_water": true
   },
-  "spawn": { "min_radius": 18, "max_radius": 60, "attempts_per_mob": 12, "require_ground": true, "avoid_water": true  },
   "waves": [
-    {"mobs": [
-      {"type": "minecraft:chicken",
-        "count": 60,
-        "ai": "aggressive",
-        "damage": 3.0,
-        "targets": {
-          "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
-          "blacklist": {"attack": ["none"], "ignore": "none"}
-        },
-        "drops": [
-          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
-        ]
-      },
-      {"type": "minecraft:zombie",
-        "count": 40,
-        "ai": "aggressive",
-        "damage": 3.0,
-        "drops": [
-          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
-        ]
-      }
-    ],
-      "complete": {"type": "all_dead" },
+    {
+      "mobs": [
+        {
+          "type": "minecraft:chicken",
+          "count": 40,
+          "ai": "hostile",
+          "damage": 3.0,
+          "targets": {
+            "whitelist": {
+              "attack": ["all", "minecraft:player"],
+              "ignore": ["minecraft:cow"]
+            }
+          },
+          "traits": {
+            "burn_in_sun": false,
+            "can_drown": false,
+            "knockback_resistance": 0.3,
+            "raid_ai_enabled": true
+          },
+          "drops": [
+            { "item": "minecraft:feather", "min": 1, "max": 3, "chance": 100 }
+          ]
+        }
+      ],
+      "complete": { "type": "all_dead" },
       "on_end": [
         { "type": "broadcast", "text": "Wave 1 end" }
       ]
-    },
-    {"mobs": [
-      { "type": "minecraft:zombie",
-        "count": 6,
-        "ai": "aggressive",
-        "damage": 3.0
-      },
-      {"type": "minecraft:zombie",
-        "count": 2,
-        "ai": "hostile",
-        "damage": 3.0
-      }
-    ],
-      "complete": { "type": "all_dead" }
     }
   ],
   "on_raid_end": [
-    { "type": "broadcast", "text": "congratulation!" }
+    { "type": "broadcast", "text": "Raid is over!" }
   ]
 }
 ```
-> GUI endpoints: `raidon:gui/file.png` and `raidon/gui/file.png`.
 
+GUI texture path can be:
+- `raidon:gui/file.png`
+- `raidon/gui/file.png`
 
-## Information
-Raidpoints
--------------------------------
-- `mainpoint` — Center of raid
-- `raidspawnpoint` — Spawnpoint of raid mobs
-- `raidpoint` — Point where goes raid mobs
-- `mob_wander_radius` — The radius of the collection area around the `raidpoint` (default is `50`).
-- `gather_zone_radius` — alias for `mob_wander_radius` (same behavior).
-- `collectionRadius` / `gatherZoneRadius` / `mobWanderRadius` — camelCase aliases for the same radius field.
----------
-### Commands
----------
+## NBT system example
+If you want use NBT style config, just write:
+```json
+{
+  "id": "raidon:nbt_test",
+  "nbt_system": "true",
+  "start_nbt": "{event:\"on_kill\",entity:\"minecraft:zombie\",cooldown_ticks:200}",
+  "waves": [
+    {
+      "mobs": [
+        {
+          "type": "minecraft:zombie",
+          "count": 1,
+          "ai": "hostile",
+          "nbt": "{Health:40.0f,CustomName:'{\"text\":\"BIG BOY\"}'}"
+        }
+      ],
+      "on_end_nbt": "{actions:[{type:\"broadcast\",text:\"wave finished\"}]}"
+    }
+  ],
+  "on_raid_end_nbt": "{actions:[{type:\"broadcast\",text:\"raid finished\"}]}"
+}
+```
+
+You can use NBT mode for:
+- mob NBT
+- raid start trigger
+- wave end actions
+- raid end actions
+
+## Raid points
+- `mainpoint` = center of raid
+- `raidspawnpoint` = where mobs are spawning
+- `raidpoint` = where mobs try to gather / return
+- `mob_wander_radius` = soft gather zone around `raidpoint`
+- `gather_zone_radius` = alias for same thing
+- `collection_zone_radius` = alias for same thing
+- hard border is automatic now:
+  it uses `distance(spawnPoint -> raidpoint) + 30 blocks`
+
+So yes, mobs can chase player outside gather zone.
+But they still cannot run to infinity of universe.
+
+## Commands
 - `/raidon start <id> [x y z]`
 - `/raidon stop <id>`
 - `/raidon reload`
 - `/raidon activeraids`
--------------------------------
-### Start:
-- `manual` (default, if start trigger is empty) - 
-- `player_join_any` / `player_join` — autorun if any player join
-  ```"start": { "event": "player_join_any" }```
-- `player_join_singleplayer` / `player has join in singleplay world` — autorun only in singleplayer world.
-  ```"start": { "event": "player_join_singleplayer" }```
-- `night_fall` / `night` — autorun at nightfall (overworld).
-  ```"start": { "event": "night_fall", "cooldown_ticks": 24000 }```
-- `on_kill` - run after killing a mob.
-  ```"start": { "event": "on_kill", "entity": "minecraft:chicken", "cooldown_ticks": 200 }```
-- `on_item_pickup` - start after pickup item
-  ```"start": { "event": "on_item_pickup", "item": "minecraft:diamond", "cooldown_ticks": 100 }```
-- `on_trade` - start after trading on item
-  ```"start": { "event": "on_structure_visit", "structure": "minecraft:village_plains", "value": 64 }```
-- `on_dimension_change` - start after dimmension changed
-  ```"start": { "event": "on_dimension_change", "dimension": "minecraft:nether" }```
-- `on_respawn` - start when player is respawning
-  ```"start": { "event": "on_respawn" }```
-- `on_enter_biome` - start when player enter biome
-  ```"start": { "event": "on_enter_biome", "biome": "minecraft:desert" }```
-- `on_day` - start at day
-  ```"start": { "event": "on_day", "cooldown_ticks": 24000 }```
-- `on_sunset` - start at sunset
-  ```"start": { "event": "on_sunset", "cooldown_ticks": 24000 }```
-- `on_midnight` - start at midnight
-  ```"start": { "event": "on_midnight", "cooldown_ticks": 24000 }```
-- `on_structure_visit` - start when player visit structure
-  ```"start": { "event": "on_structure_visit", "structure": "minecraft:village_plains"}```
-  
-`addition start`:
-- `event` or `type` — name of trigger
-- `value` - how many triggers should be triggered
-- `cooldown_ticks` — Delay between automatic raid launches
+
+## Start triggers
+- `manual`
+- `player_join_any`
+- `player_join_singleplayer`
+- `night_fall`
+- `on_kill`
+- `on_item_pickup`
+- `on_trade`
+- `on_dimension_change`
+- `on_respawn`
+- `on_enter_biome`
+- `on_day`
+- `on_sunset`
+- `on_midnight`
+- `on_structure_visit`
 
 Example:
 ```json
@@ -155,54 +177,43 @@ Example:
 }
 ```
 
-### Fine-tuning mobs (`traits`)
----------------------------------
-For each mob in the wave, you can set:
-- `burn_in_sun` (bool) — Can burn on sun.
-- `can_drown` (bool)
-- `knockback_resistance` (0..1)
+Extra fields:
+- `event` or `type` = trigger name
+- `cooldown_ticks` = delay between auto starts
+- `value` = extra numeric value for trigger
 
-Example
-```json
-{
-  "type": "minecraft:zombie",
-  "count": 20,
-  "ai": "aggressive",
-  "traits": {
-    "burn_in_sun": false,
-    "can_drown": false,
-    "knockback_resistance": 0.75
-  }
-}
-```
+## Mob traits
+You can tune mobs with `traits`:
+- `burn_in_sun`
+- `can_drown`
+- `knockback_resistance`
+- `movement_speed_multiplier`
+- `ai_speed_multiplier`
+- `hard_leash_multiplier`
+- `raid_ai_enabled`
 
-### Drop chance
------------------
-- `100` = always drops
+If `raid_ai_enabled` = `false`, built-in raid AI will be ignored.
+This is useful if you want control mob logic from your own mod code.
+
+## Drops
+- `100` = always
 - `50` = 50%
 - `0.25` = 0.25%
 
-It works for global and local drops
+Works for:
+- global raid drops
+- local mob drops
 
-### End trigger
-----------------------------------------------------
-End triggers:
-- `broadcast` — send broadcast message to players
-  ```{ "type": "broadcast", "text": "Рейд завершён!" }```
-- `summon` - summon mob on end
-  ```{ "type": "summon", "summon": "minecraft:zombie", "value": 10 }```
-- `command` - execute any server command (`"/time set day"` and `"time set day"` supported)
-  ```{ "type": "command", "command": "say Рейд завершён" }```
-- `set_time` - setting time in world
-  ```{ "type": "set_time", "time": 18000 }```
-- `lightning` - lightning strike to target
-  ```{ "type": "lightning" }```
-- `effect` - applying effect to players
-  ```{ "type": "effect", "effect": "minecraft:regeneration", "duration": 200, "amplifier": 1 }```
-- `title` - titling a text
-  ```{ "type": "title", "text": "It's Cookie time!" }```
+## End actions
+- `broadcast`
+- `summon`
+- `command`
+- `set_time`
+- `lightning`
+- `effect`
+- `title`
 
-Example
+Example:
 ```json
 "on_raid_end": [
   { "type": "broadcast", "text": "Raid is over!" },
@@ -210,10 +221,8 @@ Example
   { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 }
 ]
 ```
-- `on_raid_end` is supports multiple end actions.
 
-
-Lightning examples
+Lightning example:
 ```json
 { "type": "lightning" }
 { "type": "lightning", "value": 3 }
@@ -222,33 +231,28 @@ Lightning examples
 { "type": "lightning", "x": 100, "y": 70, "z": -35, "value": 4 }
 ```
 
-- `value` for lightning = strikes count (for entity target it is strikes per entity).
-  
 ## API
-------------------------------------
-Новые публичные API для других модов:
+Public API for other mods:
 - `ru.xaoser.raidon.api.RaidonApi`
 - `ru.xaoser.raidon.api.RaidRegistration`
 - `ru.xaoser.raidon.api.RaidGuiBuilder`
-- `ru.xaoser.raidon.api.RaidBuilder` / `WaveBuilder` (создание рейдов кодом)
-- `ru.xaoser.raidon.runtime.raid.RaidPointSettings` (настройка `mainpoint/raidspawnpoint/raidpoint/mob_wander_radius`)
+- `ru.xaoser.raidon.api.RaidBuilder`
+- `ru.xaoser.raidon.api.WaveBuilder`
 
-### 1) Example coding raid
+### Example coding raid
 ```java
 ResourceLocation raidId = new ResourceLocation("mymod", "library_raid");
 
 Raid raid = new RaidBuilder(raidId)
         .difficulty(3.0F)
         .addWave(w -> w
-                .mob(10, EntityType.ZOMBIE, SpawnBehavior.AGGRESSIVE, null, List.of(), MobTargeting.defaults(), new MobTraits(false, false, 0.6D))
-                .completeWhenAllDead())
-        .addWave(w -> w
-                .mob(4, EntityType.SKELETON, SpawnBehavior.HOSTILE)
+                .mob(10, EntityType.ZOMBIE, SpawnBehavior.HOSTILE, null, List.of(), MobTargeting.defaults(),
+                        new MobTraits(false, false, 0.6D, null, null, null, true))
                 .completeWhenAllDead())
         .build();
 ```
 
-### 2) GUI + registration
+### Example registration
 ```java
 RaidGuiSettings gui = RaidGuiBuilder.create()
         .mainTexture(new ResourceLocation("mymod", "gui/raid_main.png"))
@@ -261,20 +265,22 @@ RaidRegistration registration = new RaidRegistration(
         new RaidSpawnSettings(18, 60, 12, true, true),
         RaidPointSettings.DEFAULT,
         gui,
-        new RaidStartSettings(RaidStartSettings.Trigger.PLAYER_JOIN_ANY, 1200)
+        RaidStartSettings.DEFAULT
 );
 
 RaidonApi.registerRaid(registration);
 ```
 
-### 3) Start/Stop from code
+### Start and stop from code
 ```java
 RaidonApi.startRaid(raidId, serverLevel, centerPos);
 RaidonApi.stopRaid(raidId);
 ```
 
-Recomindation
------------------------------
-- Register Raids in server lifecycle (after registries).
-- Use unique ID for each Raid
-- If you want deffault GUI, don't use custom paths
+## Small recommendation
+- register raids in server lifecycle
+- use unique id for every raid
+- if you want default GUI, just do not set custom texture
+- if you want fully own mob brain, disable built-in raid AI
+- if something explodes, remember:
+  this is alpha, brother

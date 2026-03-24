@@ -10,14 +10,15 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.PanicGoal;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.InteractionHand;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.MobTraits;
@@ -83,7 +84,9 @@ public final class MobAiHelper {
         applyMovementSpeed(mob, settings.movementSpeedMultiplier());
         ensureBaseDamage(mob);
         sanitizeTargetSelector(mob);
-        replaceMeleeAttackGoal(mob, settings);
+        replaceCombatGoal(mob, settings);
+        addGoalIfAbsent(mob, mob.goalSelector.getAvailableGoals(), 6, RaidPatrolWithinRestrictionGoal.class,
+                () -> new RaidPatrolWithinRestrictionGoal(mob, settings));
 
         addTargetGoalIfAbsent(mob, mob.targetSelector.getAvailableGoals(), 0, RaidHurtByTargetGoal.class,
                 () -> new RaidHurtByTargetGoal(mob));
@@ -354,7 +357,7 @@ public final class MobAiHelper {
             return;
         }
         Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
-        goals.removeIf(goal -> goal.getGoal() instanceof PanicGoal);
+        goals.removeIf(goal -> shouldRemoveHostileGoal(goal.getGoal()));
     }
 
     private static void sanitizeTargetSelector(PathfinderMob mob) {
@@ -366,11 +369,28 @@ public final class MobAiHelper {
         });
     }
 
-    private static void replaceMeleeAttackGoal(PathfinderMob mob, BehaviorSettings settings) {
+    private static boolean shouldRemoveHostileGoal(Goal goal) {
+        if (goal instanceof FloatGoal) {
+            return false;
+        }
+        if (goal instanceof RaidReturnToRestrictionGoal
+                || goal instanceof RaidStateGoal
+                || goal instanceof RaidTargetSanitizerGoal
+                || goal instanceof RaidCombatGoal
+                || goal instanceof RaidPatrolWithinRestrictionGoal) {
+            return false;
+        }
+        if (goal instanceof PanicGoal) {
+            return true;
+        }
+        return goal.getFlags().contains(Goal.Flag.MOVE);
+    }
+
+    private static void replaceCombatGoal(PathfinderMob mob, BehaviorSettings settings) {
         Set<WrappedGoal> goals = mob.goalSelector.getAvailableGoals();
-        goals.removeIf(goal -> goal.getGoal() instanceof MeleeAttackGoal && !(goal.getGoal() instanceof RaidMeleeAttackGoal));
-        addGoalIfAbsent(mob, goals, 1, RaidMeleeAttackGoal.class,
-                () -> new RaidMeleeAttackGoal(mob, 1.0D * settings.aiSpeedMultiplier(), true, settings));
+        goals.removeIf(goal -> goal.getGoal() instanceof RaidCombatGoal);
+        addGoalIfAbsent(mob, goals, 1, RaidCombatGoal.class,
+                () -> new RaidCombatGoal(mob, 1.0D * settings.aiSpeedMultiplier(), settings));
     }
 
     private static boolean isRaidMob(LivingEntity entity) {
@@ -400,7 +420,6 @@ public final class MobAiHelper {
         AttributeInstance movementSpeed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
         if (movementSpeed != null) {
             double multiplier = Math.max(0.1D, movementSpeedMultiplier);
-            // Persist original base speed once to avoid compounding multiplication when applyBehavior runs again.
             double storedBase = mob.getPersistentData().contains(RAID_BASE_SPEED_TAG)
                     ? mob.getPersistentData().getDouble(RAID_BASE_SPEED_TAG)
                     : movementSpeed.getBaseValue();
@@ -504,44 +523,69 @@ public final class MobAiHelper {
         ATTACKING
     }
 
-    private static final class RaidMeleeAttackGoal extends MeleeAttackGoal {
+    private static final class RaidCombatGoal extends Goal {
         private final PathfinderMob mob;
         private final BehaviorSettings settings;
+        private final double speedModifier;
+        private int attackCooldown;
+        private int moveCooldown;
 
-        private RaidMeleeAttackGoal(PathfinderMob mob, double speedModifier, boolean followingTargetEvenIfNotSeen, BehaviorSettings settings) {
-            super(mob, speedModifier, followingTargetEvenIfNotSeen);
+        private RaidCombatGoal(PathfinderMob mob, double speedModifier, BehaviorSettings settings) {
             this.mob = mob;
             this.settings = settings;
+            this.speedModifier = speedModifier;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
         }
 
         @Override
         public boolean canUse() {
-            if (shouldForceReturn(mob, settings)) {
-                return false;
-            }
-            return super.canUse();
+            return hasCombatPriorityTarget(mob, mob.getTarget()) && !shouldForceReturn(mob, settings);
         }
 
         @Override
         public boolean canContinueToUse() {
-            if (shouldForceReturn(mob, settings)) {
-                return false;
-            }
-            return super.canContinueToUse();
+            return hasCombatPriorityTarget(mob, mob.getTarget()) && !shouldForceReturn(mob, settings);
+        }
+
+        @Override
+        public void start() {
+            attackCooldown = 0;
+            moveCooldown = 0;
         }
 
         @Override
         public void stop() {
-            super.stop();
-            if (shouldForceReturn(mob, settings)) {
-                mob.getNavigation().stop();
-            }
+            mob.getNavigation().stop();
         }
 
         @Override
-        protected void checkAndPerformAttack(LivingEntity enemy, double distToEnemySqr) {
-            if (distToEnemySqr <= this.getAttackReachSqr(enemy) && this.isTimeToAttack()) {
-                this.resetAttackCooldown();
+        public void tick() {
+            LivingEntity target = mob.getTarget();
+            if (!hasCombatPriorityTarget(mob, target)) {
+                return;
+            }
+
+            mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
+
+            if (attackCooldown > 0) {
+                attackCooldown--;
+            }
+            if (--moveCooldown <= 0 || mob.getNavigation().isDone()) {
+                mob.getNavigation().moveTo(target, speedModifier);
+                moveCooldown = 4 + mob.getRandom().nextInt(4);
+            }
+
+            double distToEnemySqr = mob.distanceToSqr(target);
+            if (distToEnemySqr <= getAttackReachSqr(target)) {
+                mob.getNavigation().stop();
+            }
+            checkAndPerformAttack(target, distToEnemySqr);
+        }
+
+        private void checkAndPerformAttack(LivingEntity enemy, double distToEnemySqr) {
+            if (distToEnemySqr <= getAttackReachSqr(enemy) && attackCooldown <= 0) {
+                attackCooldown = adjustedTickDelay(20);
+                mob.swing(InteractionHand.MAIN_HAND);
                 if (mob.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
                     mob.doHurtTarget(enemy);
                     return;
@@ -549,6 +593,10 @@ public final class MobAiHelper {
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
+        }
+
+        private double getAttackReachSqr(LivingEntity enemy) {
+            return (double) (mob.getBbWidth() * 2.0F * mob.getBbWidth() * 2.0F + enemy.getBbWidth());
         }
     }
 
@@ -701,7 +749,6 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
-            // Small interval avoids doing player-mode checks every tick while still clearing invalid targets quickly.
             if (--checkCooldown > 0) {
                 return;
             }
@@ -753,7 +800,6 @@ public final class MobAiHelper {
             this.mob = mob;
             this.behavior = behavior;
             this.settings = settings;
-            // Use only MOVE so this goal does not contend with combat LOOK behavior.
             this.setFlags(EnumSet.of(Flag.MOVE));
         }
 
@@ -805,7 +851,6 @@ public final class MobAiHelper {
 
         @Override
         public void tick() {
-            // Repath only when needed to avoid constant moveTo resets that create stop-start movement.
             if (--moveCooldown <= 0 || mob.getNavigation().isDone()) {
                 issueMoveToRestriction();
             }
@@ -901,7 +946,6 @@ public final class MobAiHelper {
                     currentPatrolTarget.getZ() + 0.5D
             ) <= ARRIVAL_DISTANCE_SQR;
 
-            // Keep patrol fluid by selecting a new point quickly after arrival, but with a short throttle to avoid spam.
             if (reselectionCooldown <= 0 && (recalcTicks <= 0 || mob.getNavigation().isDone() || reachedDestination)) {
                 moveToNextPoint();
             }
@@ -912,7 +956,6 @@ public final class MobAiHelper {
             BlockPos center = mob.getRestrictCenter();
             int radius = Math.max(4, Mth.floor(mob.getRestrictRadius()));
             for (int i = 0; i < 24; i++) {
-                // sqrt radius sampling gives uniform area coverage instead of over-biasing the restriction edge.
                 double angle = mob.getRandom().nextDouble() * (Math.PI * 2.0D);
                 double randomRadius = Math.sqrt(mob.getRandom().nextDouble()) * radius;
                 int candidateX = center.getX() + Mth.floor(Mth.cos((float) angle) * (float) randomRadius);
@@ -927,7 +970,6 @@ public final class MobAiHelper {
                     continue;
                 }
 
-                // Cheap rejection of poor nodes (water/liquid or large vertical jump) to reduce stalled paths.
                 if (!mob.level().getBlockState(candidate).getFluidState().isEmpty()
                         || !mob.level().getBlockState(candidate.above()).getFluidState().isEmpty()) {
                     continue;

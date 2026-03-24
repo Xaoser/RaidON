@@ -10,9 +10,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Simple registry holding parsed raid definitions for the running server.
- */
 public final class RaidRuntimeManager {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<ResourceLocation, RaidDefinition> REGISTERED = new ConcurrentHashMap<>();

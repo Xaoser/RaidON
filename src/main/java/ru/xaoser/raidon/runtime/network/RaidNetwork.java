@@ -6,9 +6,6 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import ru.xaoser.raidon.Raidon;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 
-/**
- * Central network registration point for raid-related packets.
- */
 public final class RaidNetwork {
     private static final String PROTOCOL_VERSION = "1";
     private static final ResourceLocation CHANNEL_ID = new ResourceLocation(Raidon.MODID, "raid");
@@ -18,9 +15,6 @@ public final class RaidNetwork {
     private RaidNetwork() {
     }
 
-    /**
-     * Registers all packets the raid runtime relies on.
-     */
     public static void register() {
         if (channel == null) {
             channel = NetworkRegistry.newSimpleChannel(
