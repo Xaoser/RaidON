@@ -408,11 +408,11 @@ public final class MobAiHelper {
     private static void ensureBaseDamage(PathfinderMob mob) {
         AttributeInstance damage = mob.getAttribute(Attributes.ATTACK_DAMAGE);
         if (damage != null && damage.getBaseValue() <= 0.0D) {
-            damage.setBaseValue(DEFAULT_BASE_DAMAGE);
+            damage.setBaseValue(getStoredBaseDamage(mob));
             return;
         }
-        if (!mob.getPersistentData().contains(RAID_BASE_DAMAGE_TAG)) {
-            mob.getPersistentData().putDouble(RAID_BASE_DAMAGE_TAG, DEFAULT_BASE_DAMAGE);
+        if (!hasStoredBaseDamage(mob)) {
+            setRaidBaseDamage(mob, DEFAULT_BASE_DAMAGE);
         }
     }
 
@@ -421,7 +421,22 @@ public final class MobAiHelper {
         if (damage != null) {
             return Math.max(0.0D, damage.getValue());
         }
-        if (mob.getPersistentData().contains(RAID_BASE_DAMAGE_TAG)) {
+        return getStoredBaseDamage(mob);
+    }
+
+    public static void setRaidBaseDamage(Mob mob, double damage) {
+        if (mob == null) {
+            return;
+        }
+        mob.getPersistentData().putDouble(RAID_BASE_DAMAGE_TAG, Math.max(0.0D, damage));
+    }
+
+    private static boolean hasStoredBaseDamage(Mob mob) {
+        return mob != null && mob.getPersistentData().contains(RAID_BASE_DAMAGE_TAG);
+    }
+
+    private static double getStoredBaseDamage(Mob mob) {
+        if (hasStoredBaseDamage(mob)) {
             return Math.max(0.0D, mob.getPersistentData().getDouble(RAID_BASE_DAMAGE_TAG));
         }
         return DEFAULT_BASE_DAMAGE;
@@ -521,28 +536,25 @@ public final class MobAiHelper {
                 moveCooldown = 4 + mob.getRandom().nextInt(4);
             }
 
-            double distToEnemySqr = mob.distanceToSqr(target);
-            if (distToEnemySqr <= getAttackReachSqr(target)) {
+            boolean withinAttackRange = mob.isWithinMeleeAttackRange(target);
+            if (withinAttackRange) {
                 mob.getNavigation().stop();
             }
-            checkAndPerformAttack(target, distToEnemySqr);
+            checkAndPerformAttack(target, withinAttackRange);
         }
 
-        private void checkAndPerformAttack(LivingEntity enemy, double distToEnemySqr) {
-            if (distToEnemySqr <= getAttackReachSqr(enemy) && attackCooldown <= 0) {
+        private void checkAndPerformAttack(LivingEntity enemy, boolean withinAttackRange) {
+            if (withinAttackRange && attackCooldown <= 0) {
                 attackCooldown = adjustedTickDelay(20);
                 mob.swing(InteractionHand.MAIN_HAND);
                 if (mob.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
-                    mob.doHurtTarget(enemy);
-                    return;
+                    if (mob.doHurtTarget(enemy)) {
+                        return;
+                    }
                 }
                 DamageSource source = mob.damageSources().mobAttack(mob);
                 enemy.hurt(source, (float) getBaseDamage(mob));
             }
-        }
-
-        private double getAttackReachSqr(LivingEntity enemy) {
-            return (double) (mob.getBbWidth() * 2.0F * mob.getBbWidth() * 2.0F + enemy.getBbWidth());
         }
     }
 

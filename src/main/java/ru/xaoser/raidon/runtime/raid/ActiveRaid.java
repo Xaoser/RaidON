@@ -616,7 +616,18 @@ class ActiveRaid implements RaidRuntime {
             double baseDamage = entry.baseDamage() != null ? entry.baseDamage() : damage.getBaseValue();
             double scaledDamage = Math.max(0.0D, baseDamage * multiplier);
             damage.setBaseValue(scaledDamage);
+            MobAiHelper.setRaidBaseDamage(mob, scaledDamage);
+            return;
         }
+        if (nbtHints.attackDamageValue() != null) {
+            MobAiHelper.setRaidBaseDamage(mob, nbtHints.attackDamageValue());
+            return;
+        }
+        double fallbackBaseDamage = entry.baseDamage() != null ? entry.baseDamage() : mob.getPersistentData().getDouble("raidon_base_damage");
+        if (fallbackBaseDamage <= 0.0D) {
+            fallbackBaseDamage = 2.0D;
+        }
+        MobAiHelper.setRaidBaseDamage(mob, fallbackBaseDamage * multiplier);
     }
 
     private void tickMobTunings() {
@@ -638,8 +649,8 @@ class ActiveRaid implements RaidRuntime {
     private MobNbtHints inspectMobNbt(CompoundTag tag) {
         boolean explicitHealth = tag.contains("Health", Tag.TAG_ANY_NUMERIC)
                 || containsAttribute(tag, "minecraft:generic.max_health", "generic.max_health");
-        boolean explicitAttackDamage = containsAttribute(tag, "minecraft:generic.attack_damage", "generic.attack_damage");
-        return new MobNbtHints(explicitHealth, explicitAttackDamage);
+        Double attackDamageValue = findAttributeBase(tag, "minecraft:generic.attack_damage", "generic.attack_damage");
+        return new MobNbtHints(explicitHealth, attackDamageValue != null, attackDamageValue);
     }
 
     private boolean containsAttribute(CompoundTag tag, String... names) {
@@ -667,6 +678,44 @@ class ActiveRaid implements RaidRuntime {
             }
         }
         return false;
+    }
+
+    private Double findAttributeBase(CompoundTag tag, String... names) {
+        if (tag == null) {
+            return null;
+        }
+        if (tag.contains("Attributes", Tag.TAG_LIST)) {
+            Double found = findAttributeBase(tag.getList("Attributes", Tag.TAG_COMPOUND), names);
+            if (found != null) {
+                return found;
+            }
+        }
+        if (tag.contains("attributes", Tag.TAG_LIST)) {
+            return findAttributeBase(tag.getList("attributes", Tag.TAG_COMPOUND), names);
+        }
+        return null;
+    }
+
+    private Double findAttributeBase(ListTag attributes, String... names) {
+        if (attributes == null || names == null) {
+            return null;
+        }
+        for (int index = 0; index < attributes.size(); index++) {
+            CompoundTag attribute = attributes.getCompound(index);
+            String name = attribute.contains("Name", Tag.TAG_STRING) ? attribute.getString("Name")
+                    : attribute.contains("id", Tag.TAG_STRING) ? attribute.getString("id") : "";
+            for (String expected : names) {
+                if (expected.equals(name)) {
+                    if (attribute.contains("Base", Tag.TAG_ANY_NUMERIC)) {
+                        return attribute.getDouble("Base");
+                    }
+                    if (attribute.contains("base", Tag.TAG_ANY_NUMERIC)) {
+                        return attribute.getDouble("base");
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void applyMobTuning(Mob mob, MobTraits tuning) {
@@ -881,8 +930,8 @@ class ActiveRaid implements RaidRuntime {
 
     private record LoopingSoundState(ResourceLocation soundId, SoundSource source, float volume, float pitch, int repeatTicks) {}
 
-    private record MobNbtHints(boolean explicitHealth, boolean explicitAttackDamage) {
-        private static final MobNbtHints EMPTY = new MobNbtHints(false, false);
+    private record MobNbtHints(boolean explicitHealth, boolean explicitAttackDamage, Double attackDamageValue) {
+        private static final MobNbtHints EMPTY = new MobNbtHints(false, false, null);
     }
 
     private record SpawnedMob(Mob mob, MobNbtHints nbtHints) {}
