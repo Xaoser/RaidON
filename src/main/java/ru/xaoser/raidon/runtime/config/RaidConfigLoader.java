@@ -11,7 +11,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.Entity;
@@ -30,6 +29,7 @@ import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.RaidAction;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
+import ru.xaoser.raidon.runtime.nbt.RelaxedNbtParser;
 import ru.xaoser.raidon.runtime.raid.RaidGuiSettings;
 import ru.xaoser.raidon.runtime.raid.RaidManager;
 import ru.xaoser.raidon.runtime.raid.RaidPointSettings;
@@ -803,11 +803,11 @@ public final class RaidConfigLoader {
             return null;
         }
         if (!(startNbt.isJsonPrimitive() && startNbt.getAsJsonPrimitive().isString())) {
-            logger.warn("[Raidon] Invalid start_nbt in {}. Expected SNBT string.", file.getFileName());
+            logger.warn("[Raidon] Invalid start_nbt in {}. Expected NBT string.", file.getFileName());
             return null;
         }
         try {
-            CompoundTag tag = TagParser.parseTag(startNbt.getAsString().trim());
+            CompoundTag tag = RelaxedNbtParser.parseCompound(startNbt.getAsString().trim());
             RaidStartSettings.Trigger trigger = parseTrigger(firstNonBlank(getTagString(tag, "type"), getTagString(tag, "event")));
             ResourceLocation entity = parseOptionalResourceLocation(getTagString(tag, "entity"));
             ResourceLocation item = parseOptionalResourceLocation(getTagString(tag, "item"));
@@ -888,11 +888,11 @@ public final class RaidConfigLoader {
             return List.of();
         }
         if (!(actionsNbt.isJsonPrimitive() && actionsNbt.getAsJsonPrimitive().isString())) {
-            logger.warn("[Raidon] Invalid {} in {}. Expected SNBT string.", key, file.getFileName());
+            logger.warn("[Raidon] Invalid {} in {}. Expected NBT string.", key, file.getFileName());
             return List.of();
         }
         try {
-            CompoundTag root = TagParser.parseTag(actionsNbt.getAsString().trim());
+            CompoundTag root = RelaxedNbtParser.parseCompound(actionsNbt.getAsString().trim());
             return parseActionsFromNbt(root);
         } catch (CommandSyntaxException exception) {
             logger.warn("[Raidon] Invalid {} in {}: {}", key, file.getFileName(), exception.getMessage());
@@ -1028,9 +1028,18 @@ public final class RaidConfigLoader {
         }
         if (nbt.isJsonPrimitive() && nbt.getAsJsonPrimitive().isString()) {
             String raw = nbt.getAsString();
-            return raw == null || raw.isBlank() ? null : raw.trim();
+            if (raw == null || raw.isBlank()) {
+                return null;
+            }
+            try {
+                return RelaxedNbtParser.normalizeCompoundString(raw);
+            } catch (CommandSyntaxException exception) {
+                logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}): {}",
+                        mobType, waveIndex, file.getFileName(), exception.getMessage());
+                return null;
+            }
         }
-        logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}) - expected SNBT string in 'nbt'",
+        logger.warn("[Raidon] Invalid NBT for mob '{}' in wave {} ({}) - expected NBT string in 'nbt'",
                 mobType, waveIndex, file.getFileName());
         return null;
     }

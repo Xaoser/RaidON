@@ -109,7 +109,7 @@ If you want use NBT style config, just write:
 {
   "id": "raidon:nbt_test",
   "nbt_system": "true",
-  "start_nbt": "{event:\"on_kill\",entity:\"minecraft:zombie\",cooldown_ticks:200}",
+  "start_nbt": "{event:on_kill, entity:minecraft:zombie, cooldown_ticks:200}",
   "waves": [
     {
       "mobs": [
@@ -117,13 +117,13 @@ If you want use NBT style config, just write:
           "type": "minecraft:zombie",
           "count": 1,
           "ai": "hostile",
-          "nbt": "{Health:40.0f,CustomName:'{\"text\":\"BIG BOY\"}'}"
+          "nbt": "{Health:40.0f, CanPickUpLoot:1b, PersistenceRequired:1b}"
         }
       ],
-      "on_end_nbt": "{actions:[{type:\"broadcast\",text:\"wave finished\"}]}"
+      "on_end_nbt": "{actions:[{type:broadcast, text:wave finished now}]}"
     }
   ],
-  "on_raid_end_nbt": "{actions:[{type:\"broadcast\",text:\"raid finished\"}]}"
+  "on_raid_end_nbt": "{actions:[{type:broadcast, text:raid finished now}]}"
 }
 ```
 
@@ -132,6 +132,11 @@ You can use NBT mode for:
 - raid start trigger
 - wave end actions
 - raid end actions
+
+Relaxed NBT is supported too:
+- `text:raid finished now` works
+- `entity:minecraft:zombie` works
+- inner `\"...\"` is not mandatory for simple string values
 
 ## Raid points
 - `mainpoint` = center of raid
@@ -143,8 +148,7 @@ You can use NBT mode for:
 - hard border is automatic now:
   it uses `distance(spawnPoint -> raidpoint) + 30 blocks`
 
-So yes, mobs can chase player outside gather zone.
-But they still cannot run to infinity of universe.
+So yes, mobs can cheese.
 
 ## Commands
 - `/raidon start <id> [x y z]`
@@ -199,9 +203,7 @@ This is useful if you want control mob logic from your own mod code.
 - `50` = 50%
 - `0.25` = 0.25%
 
-Works for:
-- global raid drops
-- local mob drops
+Works for global and local mob drops
 
 ## End actions
 - `broadcast`

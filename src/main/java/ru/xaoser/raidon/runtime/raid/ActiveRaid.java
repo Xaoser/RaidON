@@ -6,7 +6,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -29,6 +28,7 @@ import ru.xaoser.raidon.api.sup.MobTraits;
 import ru.xaoser.raidon.api.sup.MobTargeting;
 import ru.xaoser.raidon.api.sup.RaidRuntime;
 import ru.xaoser.raidon.api.sup.SpawnBehavior;
+import ru.xaoser.raidon.runtime.nbt.RelaxedNbtParser;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
@@ -529,7 +529,7 @@ class ActiveRaid implements RaidRuntime {
         }
         try {
             CompoundTag merged = mob.saveWithoutId(new CompoundTag());
-            CompoundTag custom = TagParser.parseTag(snbt);
+            CompoundTag custom = RelaxedNbtParser.parseCompound(snbt);
             custom.remove("id");
             custom.remove("UUID");
             custom.remove("Pos");
