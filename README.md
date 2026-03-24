@@ -15,87 +15,86 @@ Then yes, this library is for you.
   `nbt_system: "true"`
 - Start raids from commands
 - Start raids from Java API
-- Show raid HUD with custom textures from `config/raidon/gui/*.png`
 - Spawn mobs with custom AI and custom target logic
-- Let raid mobs chase targets outside gather zone, but still keep hard border
-- Save active raids in world data
-- Restore active raids after rejoin/restart
-- Restore raid mob logic after chunk unload / player goes far away
-- Let API users disable built-in raid AI and use own logic
 - Add custom mob NBT
-- Add start triggers and end actions in normal JSON and in NBT system too
+- delete a обычный мусор mob 3d max ultra mega universe edition
 - Give EPIC invasion for your soul
-- Not baking a cookie
-
-## Important thing
-Raid mobs now are not becoming random vanilla mobs after player go far away.
-If raid is still active, mob will restore raid logic after chunk/entity load.
-If raid is gone, stale raid mobs will be cleaned, not stay in world like обычный мусор mob.
+- Not baking a cookie(
 
 ## Example raid config
 ```json
 {
   "id": "raidon:example_raid",
-  "difficulty": 2,
+  "difficulty": 10,
   "start": {
     "event": "on_kill",
     "entity": "minecraft:zombie",
     "conditions": [
-      { "type": "min_players", "value": 2 },
+      { "type": "min_players", "value": 1 },
       { "type": "in_biome", "biome": "minecraft:plains" },
       { "type": "in_dimension", "dimension": "minecraft:overworld" },
       { "type": "y_between", "min": 60, "max": 90 }
     ]
   },
   "points": {
-    "mainpoint": { "x": 0, "y": 70, "z": 0 },
-    "raidspawnpoint": { "x": 64, "y": 70, "z": 64 },
-    "raidpoint": { "x": 0, "y": 70, "z": 0 },
-    "mob_wander_radius": 50
+    "mainpoint": {"x": 0, "y": 70, "z": 0},
+    "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
+    "raidpoint": {"x": 0, "y": 70, "z": 0}
   },
   "gui": {
-    "size": "120,40"
+    "size": "120, 40"
   },
-  "spawn": {
-    "min_radius": 18,
-    "max_radius": 60,
-    "attempts_per_mob": 12,
-    "require_ground": true,
-    "avoid_water": true
+  "drops": { "global": [
+    { "item": "minecraft:emerald", "min": 1, "max": 100, "chance": 100 },
+    { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 0.25 }
+  ]
   },
+  "spawn": { "min_radius": 18, "max_radius": 60, "attempts_per_mob": 12, "require_ground": true, "avoid_water": true  },
   "waves": [
-    {
-      "mobs": [
-        {
-          "type": "minecraft:chicken",
-          "count": 40,
-          "ai": "hostile",
-          "damage": 3.0,
-          "targets": {
-            "whitelist": {
-              "attack": ["all", "minecraft:player"],
-              "ignore": ["minecraft:cow"]
-            }
-          },
-          "traits": {
-            "burn_in_sun": false,
-            "can_drown": false,
-            "knockback_resistance": 0.3,
-            "raid_ai_enabled": true
-          },
-          "drops": [
-            { "item": "minecraft:feather", "min": 1, "max": 3, "chance": 100 }
-          ]
-        }
-      ],
-      "complete": { "type": "all_dead" },
+    {"mobs": [
+      {"type": "minecraft:zombie",
+        "count": 40,
+        "ai": "aggressive",
+        "damage": 3.0,
+        "targets": {
+          "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
+          "blacklist": {"attack": ["none"], "ignore": "none"}
+        },
+        "drops": [
+          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+        ]
+      },
+      {"type": "minecraft:zombie",
+        "count": 0,
+        "ai": "aggressive",
+        "damage": 3.0,
+        "drops": [
+          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+        ]
+      }
+    ],
+      "complete": {"type": "all_dead" },
       "on_end": [
-        { "type": "broadcast", "text": "Wave 1 end" }
+        { "type": "broadcast", "text": "Волна 1 отбита." }
       ]
+    },
+    {"mobs": [
+      { "type": "minecraft:zombie",
+        "count": 6,
+        "ai": "aggressive",
+        "damage": 3.0
+      },
+      {"type": "minecraft:zombie",
+        "count": 2,
+        "ai": "hostile",
+        "damage": 3.0
+      }
+    ],
+      "complete": { "type": "all_dead" }
     }
   ],
   "on_raid_end": [
-    { "type": "broadcast", "text": "Raid is over!" }
+    { "type": "broadcast", "text": "congratulation!" }
   ]
 }
 ```
