@@ -50,6 +50,7 @@ public final class RaidProgressS2CPacket {
             int totalInWave,
             ResourceLocation progressEmptyTexture,
             ResourceLocation progressFullTexture,
+            String hudTone,
             int barWidth,
             int barHeight
     ) {
@@ -62,6 +63,7 @@ public final class RaidProgressS2CPacket {
             buf.writeVarInt(totalInWave);
             buf.writeNullable(progressEmptyTexture, FriendlyByteBuf::writeResourceLocation);
             buf.writeNullable(progressFullTexture, FriendlyByteBuf::writeResourceLocation);
+            buf.writeUtf(hudTone == null ? "" : hudTone, 64);
             buf.writeVarInt(barWidth);
             buf.writeVarInt(barHeight);
         }
@@ -76,6 +78,7 @@ public final class RaidProgressS2CPacket {
                     buf.readVarInt(),
                     buf.readNullable(FriendlyByteBuf::readResourceLocation),
                     buf.readNullable(FriendlyByteBuf::readResourceLocation),
+                    buf.readUtf(64),
                     buf.readVarInt(),
                     buf.readVarInt()
             );

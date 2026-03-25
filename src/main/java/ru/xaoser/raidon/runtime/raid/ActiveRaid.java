@@ -398,6 +398,7 @@ class ActiveRaid implements RaidRuntime {
                 waveTotal,
                 guiSettings.resolvedProgressEmptyTexture(),
                 guiSettings.resolvedProgressFullTexture(),
+                guiSettings.tone(),
                 guiSettings.width(),
                 guiSettings.height()
         );

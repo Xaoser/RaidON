@@ -76,7 +76,8 @@ public final class RaidConfigLoader {
     "raidpoint": {"x": 0, "y": 70, "z": 0}
   },
   "gui": {
-    "size": "120, 40"
+    "size": "120, 40",
+    "tone": "blue"
   },
   "drops": { "global": [
     { "item": "minecraft:emerald", "min": 1, "max": 100, "chance": 100 },
@@ -636,6 +637,7 @@ public final class RaidConfigLoader {
                 String progress,
                 @SerializedName(value = "progress_empty", alternate = {"progressEmpty", "empty", "bar_empty", "barEmpty"}) String progress_empty,
                 @SerializedName(value = "progress_full", alternate = {"progressFull", "full", "bar_full", "barFull"}) String progress_full,
+                String tone,
                 JsonElement size
         ) {}
 
@@ -843,7 +845,7 @@ public final class RaidConfigLoader {
         ResourceLocation progressFull = parseTexture(gui.progress_full(), logger, file, "gui.progress_full");
         int[] size = parseGuiSize(gui.size(), logger, file);
 
-        return new RaidGuiSettings(main, progress, progressEmpty, progressFull, size[0], size[1]);
+        return new RaidGuiSettings(main, progress, progressEmpty, progressFull, gui.tone(), size[0], size[1]);
     }
 
     private static ResourceLocation parseTexture(String value, Logger logger, Path file, String key) {

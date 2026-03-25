@@ -106,4 +106,8 @@ public final class RaidHudState {
     public static String raidName() {
         return progress == null ? "" : progress.raidName();
     }
+
+    public static String hudTone() {
+        return progress == null ? "" : progress.hudTone();
+    }
 }
