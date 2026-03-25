@@ -16,10 +16,10 @@ public enum RaidHudOverlay implements IGuiOverlay {
     INSTANCE;
 
     private static final int DEFAULT_PANEL_WIDTH = 156;
-    private static final int DEFAULT_PANEL_HEIGHT = 44;
+    private static final int DEFAULT_PANEL_HEIGHT = 46;
     private static final int DEFAULT_BAR_HEIGHT = 10;
-    private static final int PANEL_MARGIN = 14;
-    private static final int PANEL_BOTTOM = 19;
+    private static final int PANEL_MARGIN = 6;
+    private static final int PANEL_BOTTOM = 10;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {

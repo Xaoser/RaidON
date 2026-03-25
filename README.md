@@ -1,171 +1,131 @@
-# RaidON library
+# RaidON library :thinking:
 
-THIS IS STILL ALPHA LIBRARY!!!
-If you found bug, strange thing, cursed chicken invasion or just have idea for better stuff, write me in [discord](https://discord.gg/5NSxKrA8tN)
+### LIBRARY IN BETA!
+If you found a bug, error or suggestion for improvement, plz write me about it in [discord](https://discord.gg/5NSxKrA8tN)
 
-Do you want zombie apocalypse?
-Do you want village event?
-Do you want 200 angry chickens running to you or your friend?
-Then yep, this library is for you.
+Do you want zombie apocalypse?\
+Do you want village invasion?\
+Do you want 200 angry chickens with **boss** music?\
+Then yep, this library for you.
 
-## What this mod can do?
-- Load raids from `config/raidon/raids/*.json`
-- Support 2 config styles:
+## What RaidON can do
+- load raids from `config/raidon/raids/*.json`
+- support 2 config styles:
   `normal json system`
-  `nbt_system: "true"`
-- Start raids from commands
-- Start raids from Java API
-- Start raids from events
-- Spawn mobs with custom AI and custom target logic
-- Add custom mob NBT
-- delete a обычный мусор mob 3d max ultra mega universe edition
-- Give EPIC invasion for your soul
-- Not baking a cookie(
+  `nbt_system`
+- start raids from commands
+- start raids from Java API
+- support mob NBT
+- support custom raid start actions, wave actions, raid end actions
+- show custom or default HUD
+- load custom sounds from config folder
+- provide a **EPIC** invasion for your ass!
+- delete a обычный мусор 3D MAX ultra mega universe edition mob
+- not bake a cookie(
 
-## Example raid config
+## Read this first
+> [!NOTE]\
+> You do not need read whole README in one pain session.
+>
+### If you want start fast, read [Quick start](#Quick-start).
+
+### If you advanced modpack creator or some of this peoples, you can read [NBT System](#NBT-System)
+
+### Seeing for visual or sound raid config? read this page: [Visual and Sound](#Visual-and-Sound)
+
+### If you want create your own mod with this library, then read a [API Section](#API-Section).
+
+## Quick start
+You want a quick start using this mod, okay, bellow is example config of raid, you must copy this **_json_** and past in path `your_minecraft/config/raidon/raids/`.\
+if you already run your game, in this path you already have example raid config, you can configure this file or create new.\
+> [!TIP]\
+> When you changed something in json file, you don't have to restart the game, instead you can write the command `/raidon restart`
+
+
 ```json
 {
+  "Name": "Example Raid",
   "id": "raidon:example_raid",
-  "difficulty": 10,
+  "difficulty": 5,
   "start": {
     "event": "on_kill",
     "entity": "minecraft:zombie",
-    "conditions": [
-      { "type": "min_players", "value": 1 },
-      { "type": "in_biome", "biome": "minecraft:plains" },
-      { "type": "in_dimension", "dimension": "minecraft:overworld" },
-      { "type": "y_between", "min": 60, "max": 90 }
-    ]
+    "count": 10,
+    "cooldown_ticks": 200
   },
-  "on_raid_start": [
-    { "type": "title", "text": "Raid started!" },
-    { "type": "effect", "effect": "minecraft:resistance", "duration": 200, "amplifier": 0 },
-    { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 }
-  ],
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
-    "raidpoint": {"x": 0, "y": 70, "z": 0}
+    "raidpoint": {"x": 0, "y": 70, "z": 0},
+    "mob_wander_radius": 24
   },
   "gui": {
-    "size": "120, 40"
+    "tone": "blue"
   },
-  "drops": { "global": [
-    { "item": "minecraft:emerald", "min": 1, "max": 100, "chance": 100 },
-    { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 0.25 }
-  ]
-  },
-  "spawn": { "min_radius": 18, "max_radius": 60, "attempts_per_mob": 12, "require_ground": true, "avoid_water": true  },
-  "waves": [
-    {"mobs": [
-      {"type": "minecraft:zombie",
-        "count": 40,
-        "ai": "aggressive",
-        "damage": 3.0,
-        "targets": {
-          "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
-          "blacklist": {"attack": ["none"], "ignore": "none"}
-        },
-        "drops": [
-          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
-        ]
-      },
-      {"type": "minecraft:zombie",
-        "count": 0,
-        "ai": "aggressive",
-        "damage": 3.0,
-        "drops": [
-          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
-        ]
-      }
-    ],
-      "complete": {"type": "all_dead" },
-      "on_end": [
-        { "type": "broadcast", "text": "Волна 1 отбита." }
-      ]
-    },
-    {"mobs": [
-      { "type": "minecraft:zombie",
-        "count": 6,
-        "ai": "aggressive",
-        "damage": 3.0
-      },
-      {"type": "minecraft:zombie",
-        "count": 2,
-        "ai": "hostile",
-        "damage": 3.0
-      }
-    ],
-      "complete": { "type": "all_dead" }
-    }
-  ],
-  "on_raid_end": [
-    { "type": "broadcast", "text": "congratulation!" }
-  ]
-}
-```
-
-GUI texture path can be:
-- `raidon:gui/file.png`
-- `raidon/gui/file.png`
-
-GUI progress bar names:
-- `main` = legacy empty bar texture
-- `progress` = legacy full bar texture
-- `progress_empty` = empty bar texture
-- `progress_full` = full bar texture
-
-If custom bar textures are set, RaidON hides only old black background.
-Texts and progress stay visible.
-
-## NBT system example
-If you want use NBT style config, just write:
-```json
-{
-  "id": "raidon:nbt_test",
-  "nbt_system": "true",
-  "start_nbt": "{event:on_kill, entity:minecraft:zombie, count:10, cooldown_ticks:200}",
-  "on_raid_start_nbt": [
-    { "type": "broadcast", "text": "raid started" },
-    { "type": "sound", "sound": "minecraft:entity.ender_dragon.growl", "volume": 1.2, "pitch": 1.0 }
-  ],
   "waves": [
     {
-      "on_start_nbt": [
-        { "type": "effect", "effect": "minecraft:speed", "duration": 200, "amplifier": 0 },
-        { "type": "sound", "sound": "minecraft:block.bell.use", "sound_source": "master" }
-      ],
       "mobs": [
         {
           "type": "minecraft:zombie",
-          "count": 1,
+          "count": 20,
           "ai": "hostile",
-          "nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
+          "damage": 3.0
         }
       ],
-      "on_end_nbt": "{actions:[{type:broadcast, text:wave finished now}]}"
+      "on_start": [
+        { "type": "title", "text": "&6&lZombie Raid" },
+        { "type": "sound", "sound": "minecraft:block.bell.use" }
+      ],
+      "on_end": [
+        { "type": "broadcast", "text": "&aWave finished" }
+      ]
     }
   ],
-  "on_raid_end_nbt": "{actions:[{type:broadcast, text:raid finished now}]}"
+  "on_raid_end": [
+    { "type": "broadcast", "text": "&6Raid is over" }
+  ]
 }
 ```
+This raid config is simple and don't show you a most things, if you want more advanced options, continue reading.
 
-If you want full summon-style NBT, just write normal SNBT string like in command:
+## How RaidON is structured
+Every raid necessarily has: `Name`, `id`, `difficulty`, `start trigger`, `mainpoint, spawnpoint, raidpoint`, `one or more waves`, `global_drops`.\
+Also Raid has optional things like: `gui`, `start or end actions`, `nbt system`.
+
+Every wave necessarily has: `mobs` and optional `on_start`, `on_end` more about it you can read in [Events](Events)
+
+Every mob entry has: `mob type`, `count`, `ai`, `damage` also mobs has a optional things like: `drops`, `black and white lists`, `traits`.
+
+> [!NOTE]\
+> Everything about drops you can found in [Drops](#Drops)
+
+## NBT System
+Use this if you want NBT system, you can enable this system with:
 ```json
-"nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}]}"
+"nbt_system": true
+```
+Writing`"true"` also works.
+
+In NBT mode you can use:`start_nbt`, `on_raid_start_nbt`, `on_start_nbt`, `on_end_nbt`, `on_raid_end_nbt`, mob `"nbt"` like:
+>"nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"KFC BOSS\",\"color\":\"red\"}',CustomNameVisible:1b,ActiveEffects:[{Id:1b,Amplifier:1b,Duration:1200}],Attributes:[{Name:\"minecraft:generic.armor\",Base:0.0d},{Name:\"minecraft:generic.attack_damage\",Base:999.0d}]}"
+This mode supports exact SNBT like `/summon`, `.snbt` files, JSON object to NBT conversion, JSON array to NBT list conversion, NBT actions for raid start, wave start, wave end, and raid end, and also relaxed simple strings in SNBT.
+
+Raw string example:
+
+```json
+"nbt": "{Health:40.0f,CanPickUpLoot:1b,CustomName:'{\"text\":\"Boss Zombie\",\"color\":\"red\"}',CustomNameVisible:1b}"
 ```
 
-If this thing is gigantic, use `.snbt` file:
+Big file example:**
+
 ```json
 "nbt": "@file:bosses/raid_archer.snbt"
 ```
 
-Where file will be searched:
-- near current raid json
-- then in `config/raidon/nbt/`
-- absolute path also works
+The search order for `@file` is simple. RaidON first checks near the current raid json, then `config/raidon/nbt/`, and absolute path also works.
 
-If you do not want escape previous style, you can write same thing as JSON object:
+JSON object mode example:
+
 ```json
 "nbt": {
   "Health": "40.0f",
@@ -175,77 +135,55 @@ If you do not want escape previous style, you can write same thing as JSON objec
   "CustomNameVisible": true,
   "ActiveEffects": [
     { "Id": "1b", "Amplifier": "1b", "Duration": 1200 }
-  ],
-  "ArmorDropChances": ["0.0f", "0.0f", "0.25f", "0.5f"]
+  ]
+}
+```
+## Points and raid area
+`points` is one of the most important parts of the raid config.
+If these points are wrong, the raid can still work, but mob behavior may become strange and unpredictable.
+
+```json
+"points": {
+  "mainpoint": {"x": 0, "y": 70, "z": 0},
+  "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
+  "raidpoint": {"x": 0, "y": 70, "z": 0},
+  "mob_wander_radius": 24
 }
 ```
 
-For start/end actions you can use object, SNBT string, or just list:
+`mainpoint` is the main center of the raid.\
+`raidspawnpoint` is the point from which the wave spawn circle is calculated.\
+`raidpoint` is the point where mobs try to gather and return.\
+`mob_wander_radius` defines the soft gathering zone around `raidpoint`.
+
+For `mob_wander_radius` you can also use aliases `gather_zone_radius` or `collection_zone_radius`.
+
+> [!IMPORTANT]\
+> Raid mobs has hard return radius (gather_zone_radius+30), when mobs cross this zone, they are hard returning into collection_zone_radius
+
+## Spawn settings
+Example:
+
 ```json
-"on_end_nbt": [
-  { "type": "broadcast", "text": "wave finished now" },
-  { "type": "command", "command": "say wave cleared" }
-]
+"spawn": {
+  "min_radius": 18,
+  "max_radius": 60,
+  "attempts_per_mob": 12,
+  "require_ground": true,
+  "avoid_water": true
+}
 ```
 
-What is supported now:
-- exact SNBT like in `/summon`
-- JSON object to NBT convert
-- JSON array to NBT list convert
-- raid start / wave start / wave end / raid end actions in NBT mode
-- relaxed simple strings in SNBT:
-  `text:raid finished now` works
-  `entity:minecraft:zombie` works
-- `CustomName` can be plain string:
-  `"CustomName": "Boss Zombie"`
-- `CustomName` can be text component object:
-  `"CustomName": { "text": "Boss Zombie", "bold": true }`
-- `display.Lore` can be string list or text component list
-- exact typed values inside JSON object can be written as strings:
-  `"1b"`, `"20s"`, `"40.0f"`, `"[I;1,2,3,4]"`
-- if you want force exact raw NBT in object mode, use:
-  `{"$snbt":"[I;1,2,3,4]"}`
-- giant SNBT can be loaded from `@file:*.snbt`
-- raw string/file NBT now goes through exact summon-style compound parsing
-- if you want exact command syntax, use raw SNBT string or `.snbt` file
-- helper JSON object mode still exists, but exact behavior is raw SNBT mode
+`min_radius` defines how close mobs are allowed to spawn to the center. `max_radius` defines the maximum spawn radius. `attempts_per_mob` controls how many spawn attempts are made for each mob before RaidON gives up for that tick. `require_ground` tells the system to try spawning mobs on ground. `avoid_water` tells the system to avoid water whenever possible.
 
-## Raid points
-- `mainpoint` = center of raid
-- `raidspawnpoint` = where mobs are spawning
-- `raidpoint` = where mobs try to gather / return
-- `mob_wander_radius` = soft gather zone around `raidpoint`
-- `gather_zone_radius` = alias for same thing
-- `collection_zone_radius` = alias for same thing
-- hard border is automatic now:
-  it uses `distance(spawnPoint -> raidpoint) + 30 blocks`
-
-So yes, mobs can cheese.
-
-## Commands
-- `/raidon start <id> [x y z]`
-- `/raidon stop <id>`
-- `/raidon reload`
-- `/raidon activeraids`
+Wave mobs do not spawn in a perfect ring anymore.
+They are placed at random positions inside the spawn circle, so the raid looks more natural and less like a school line.
 
 ## Start triggers
-- `manual`
-- `enter_area`
-- `player_join_any`
-- `player_join_singleplayer`
-- `night_fall`
-- `on_kill`
-- `on_item_pickup`
-- `on_trade`
-- `on_dimension_change`
-- `on_respawn`
-- `on_enter_biome`
-- `on_day`
-- `on_sunset`
-- `on_midnight`
-- `on_structure_visit`
+Available triggers are `manual`, `enter_area`, `player_join_any`, `player_join_singleplayer`, `night_fall`, `on_kill`, `on_item_pickup`, `on_trade`, `on_dimension_change`, `on_respawn`, `on_enter_biome`, `on_day`, `on_sunset`, `on_midnight`, `on_structure_visit`.
 
 Example:
+
 ```json
 "start": {
   "event": "on_kill",
@@ -255,24 +193,12 @@ Example:
 }
 ```
 
-Extra fields:
-- `event` or `type` = trigger name
-- `cooldown_ticks` = delay between auto starts
-- `count` = how many matching events are needed before raid starts
-- `radius` = search radius for triggers like `on_structure_visit`
-- `center` = custom raid start center
-- `value` = legacy numeric alias, still supported for old configs
+The `event` field, or its alias `type`, defines the trigger name. `entity` is used as a filter for entity-based triggers. `item` is used for pickup or trade triggers. `structure` is used for structure-based triggers. `count` defines how many matching events are required. `cooldown_ticks` defines the delay between automatic starts. `radius` is used by area and structure triggers. `center` tells RaidON how the raid center should be resolved. `value` is kept as a legacy numeric alias.
 
-Supported start conditions:
-- `min_players`
-- `max_players`
-- `y_between`
-- `in_biome`
-- `in_dimension`
-- `time_of_day`
-- `moon_phase`
+Supported start conditions are `min_players`, `max_players`, `y_between`, `in_biome`, `in_dimension`, `time_of_day`, and `moon_phase`.
 
-Examples:
+Structure-based example:
+
 ```json
 "start": {
   "event": "enter_area",
@@ -290,66 +216,106 @@ Examples:
 }
 ```
 
+RaidON supports three center types. `event` uses the trigger position or player position. `spawn` uses the world spawn. `structure` uses the center of the located structure.
+
+## Waves and mobs
+Wave example:
+
 ```json
-"start": {
-  "event": "on_trade",
-  "item": "minecraft:emerald",
-  "count": 3
-}
+"waves": [
+  {
+    "spawn_radius": 20,
+    "mobs": [
+      {
+        "type": "minecraft:zombie",
+        "count": 30,
+        "ai": "hostile",
+        "damage": 4.0
+      },
+      {
+        "type": "minecraft:skeleton",
+        "count": 8,
+        "ai": "hostile"
+      }
+    ],
+    "on_start": [
+      { "type": "subtitle", "text": "&6Wave 1" }
+    ],
+    "on_end": [
+      { "type": "broadcast", "text": "&aWave finished" }
+    ]
+  }
+]
 ```
 
-```json
-"start": {
-  "event": "on_item_pickup",
-  "item": "minecraft:diamond",
-  "count": 16
-}
-```
+Every mob entry can use fields such as `type`, `count`, `ai`, `damage`, `targets`, `drops`, `traits`, and `nbt`.
+
+The `ai` field supports `hostile`, `aggressive`, and `neutral`.
+
+In practice, raid hostile mobs use RaidON combat logic first. Vanilla behavior only gets a chance when the custom logic has nothing to do. Raid mobs also ignore other raid mobs as valid targets.
+
+## Target logic
+Example:
 
 ```json
-"start": {
-  "event": "on_structure_visit",
-  "structure": "minecraft:village_plains",
-  "radius": 96
-}
-```
-
-Center types:
-- `event` = start raid at trigger position/player position
-- `spawn` = start raid at world spawn
-- `structure` = start raid at located structure center
-
-NBT center example:
-```json
-"start_nbt": {
-  "event": "enter_area",
-  "radius": 48,
-  "center": {
-    "type": "structure",
-    "structure": "minecraft:village_plains",
-    "search_radius": 1024,
-    "prefer_nearest": true
+"targets": {
+  "whitelist": {
+    "attack": ["all", "minecraft:player"],
+    "ignore": ["minecraft:cow"]
   },
-  "conditions": [
-    { "type": "time_of_day", "min": 13000, "max": 23000 }
+  "blacklist": {
+    "attack": ["none"],
+    "ignore": "none"
+  }
+}
+```
+
+The idea is simple. `attack` defines what the mob is allowed to attack, while `ignore` defines what the mob must ignore. Players still have the highest priority if they are visible.
+
+## Mob traits
+You can tune mob behavior with `traits`.
+
+```json
+"traits": {
+  "burn_in_sun": false,
+  "can_drown": false,
+  "knockback_resistance": 0.8,
+  "movement_speed_multiplier": 1.0,
+  "ai_speed_multiplier": 1.0,
+  "hard_leash_multiplier": 1.75,
+  "raid_ai_enabled": true
+}
+```
+
+Supported trait fields include `burn_in_sun`, `can_drown`, `knockback_resistance`, `movement_speed_multiplier`, `ai_speed_multiplier`, `hard_leash_multiplier`, and `raid_ai_enabled`.
+
+If `raid_ai_enabled` is set to `false`, the built-in raid AI is fully ignored.
+This is useful when you want full control from your own mod code.
+
+## Drops
+Drop example:
+
+```json
+"drops": {
+  "global": [
+    { "item": "minecraft:emerald", "min": 1, "max": 3, "chance": 25 }
   ]
 }
 ```
 
-## Event actions
-You can run actions on:
-- `on_raid_start`
-- `on_start`
-- `on_end`
-- `on_raid_end`
+Chance logic works like this: `100` means always, `50` means 50%, and `0.25` means 0.25%.
 
-NBT twins:
-- `on_raid_start_nbt`
-- `on_start_nbt`
-- `on_end_nbt`
-- `on_raid_end_nbt`
+This system works for both global raid drops and local mob drops.
+
+## Events
+You can run events on `on_raid_start`, `on_start`, `on_end`, and `on_raid_end`.
+
+NBT versions of these are `on_raid_start_nbt`, `on_start_nbt`, `on_end_nbt`, and `on_raid_end_nbt`.
+
+Available events are `broadcast`, `chat`, `actionbar`, `subtitle`, `title`, `summon`, `command`, `set_time`, `lightning`, `effect`, `sound`, `loop_sound`, `raid_sound`, and `music`.
 
 Example:
+
 ```json
 "on_raid_start": [
   { "type": "chat", "text": "&cRaid started!" },
@@ -359,78 +325,29 @@ Example:
 ]
 ```
 
-Wave start example:
-```json
-"on_start": [
-  { "type": "subtitle", "text": "Wave 2", "fade_in": 10, "stay": 50, "fade_out": 20 },
-  { "type": "actionbar", "text": "Enemies incoming" },
-  { "type": "sound", "sound": "minecraft:block.bell.use", "sound_source": "master", "volume": 1.0, "pitch": 1.1 }
-]
-```
+## :exclamation: Visual and Sound
+Normal sound example:
 
-## Mob traits
-You can tune mobs with `traits`:
-- `burn_in_sun`
-- `can_drown`
-- `knockback_resistance`
-- `movement_speed_multiplier`
-- `ai_speed_multiplier`
-- `hard_leash_multiplier`
-- `raid_ai_enabled`
-
-If `raid_ai_enabled` = `false`, built-in raid AI will be ignored.
-This is useful if you want control mob logic from your own mod code.
-
-## Drops
-- `100` = always
-- `50` = 50%
-- `0.25` = 0.25%
-
-Works for global and local mob drops
-
-## Actions
-- `broadcast`
-- `chat`
-- `actionbar`
-- `subtitle`
-- `title`
-- `summon`
-- `command`
-- `set_time`
-- `lightning`
-- `effect`
-- `sound`
-- `loop_sound`
-- `raid_sound`
-- `music`
-
-Example:
-```json
-"on_raid_end": [
-  { "type": "chat", "text": "Raid is over!" },
-  { "type": "summon", "summon": "minecraft:zombie", "value": 10 },
-  { "type": "effect", "effect": "minecraft:speed", "duration": 300, "amplifier": 0 },
-  { "type": "sound", "sound": "minecraft:ui.toast.challenge_complete", "sound_source": "master", "volume": 1.0, "pitch": 1.0 },
-  { "type": "title", "text": "Raid Complete" }
-]
-```
-
-Sound example:
 ```json
 { "type": "sound", "sound": "minecraft:block.bell.use" }
 { "type": "sound", "sound": "minecraft:entity.wither.spawn", "sound_source": "hostile", "volume": 1.5, "pitch": 0.8 }
 { "type": "loop_sound", "sound": "minecraft:music_disc.13", "sound_source": "music", "repeat_ticks": 240 }
 ```
 
+The `sound` action plays once. `loop_sound`, `raid_sound`, and `music` keep replaying while the raid is active.
+If you want ending sounds, they should still go inside `on_raid_end`.
+
 ## Custom sounds from config
-RaidON auto-loads client resources from: `config/raidon/resources/`
-folder is created automatically on client start.
+RaidON automatically loads client resources from `config/raidon/resources/`.
+
+This folder is created automatically on client start.
 
 Minimal example:
+
 ```text
 config/raidon/resources/
 └── assets/
-    └── raidon_cfg/
+    └── raidon_sound/
         ├── sounds.json
         └── sounds/
             ├── raid_start.ogg
@@ -438,6 +355,7 @@ config/raidon/resources/
 ```
 
 Example `sounds.json`:
+
 ```json
 {
   "raid_start": {
@@ -456,65 +374,76 @@ Example `sounds.json`:
 }
 ```
 
-Then in raid config just use:
+Then in raid config:
+
 ```json
 { "type": "sound", "sound": "raidon_sound:raid_start", "sound_source": "master" }
 { "type": "loop_sound", "sound": "raidon_sound:raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
 ```
 
-Useful thing:
-- after changing `.ogg` or `sounds.json`, do `F3+T` or restart client
-- vanilla ids and custom ids work the same way
+> [!TIP]\
+> after changing `.ogg` or `sounds.json`, do `F3+T` or restart client
 
-## Text colors
-Raid text supports legacy formatting codes:
-- colors: `&0` ... `&f`
-- styles: `&l`, `&n`, `&o`, `&m`, `&k`
-- reset: `&r`
-- hex: `&#FF0000`
+## HUD and GUI
+RaidON has 2 HUD modes.
 
-Works in:
-- `chat`
-- `actionbar`
-- `subtitle`
-- `title`
+### 1. Built-in HUD
+If you do not load custom textures, RaidON uses the built-in HUD.
 
-Example:
+Important thing now:
+- built-in HUD size is fixed in JSON configs
+- `gui.size` is not used anymore
+- this was done on purpose, so default HUD does not become random monster on screen
+
+Built-in HUD config:
+
 ```json
-{ "type": "chat", "text": "&6Raid &cstarted" }
-{ "type": "title", "text": "&#FF3B1D&lBLOOD MOON RAID" }
+"gui": {
+  "tone": "blue"
+}
 ```
 
-If you want full JSON text component, that still works too.
+Supported `tone` values are `blue`, `green`, `purple`, `gold`, and `gray`.
 
-Text output types:
-- `chat` or `broadcast` = chat message
-- `actionbar` = text above hotbar
-- `subtitle` = smaller center text
-- `title` = main center text
+If `tone` is missing, the default red/brown style is used.
 
-Lightning example:
+### 2. Custom bar textures
+If you set custom textures, RaidON hides only the default black background.
+Text and progress still stay visible.
+
+Texture keys are `progress_empty` and `progress_full`. Legacy aliases are `main` and `progress`.
+
+Path examples are `raidon:gui/file.png` and `raidon/gui/file.png`.
+
+Config example:
+
 ```json
-{ "type": "lightning" }
-{ "type": "lightning", "value": 3 }
-{ "type": "lightning", "target": "entity", "entity": "players_in_raid" }
-{ "type": "lightning", "target": "entity", "entity": "mobs", "radius": 80, "value": 2 }
-{ "type": "lightning", "x": 100, "y": 70, "z": -35, "value": 4 }
+"gui": {
+  "progress_empty": "mymod:gui/raid_bar_empty.png",
+  "progress_full": "mymod:gui/raid_bar_full.png"
+}
 ```
 
-## API
-Public API for other mods:
-- `ru.xaoser.raidon.api.RaidonApi`
-- `ru.xaoser.raidon.api.RaidRegistration`
-- `ru.xaoser.raidon.api.RaidGuiBuilder`
-- `ru.xaoser.raidon.api.RaidBuilder`
-- `ru.xaoser.raidon.api.WaveBuilder`
+If custom textures are loaded, `tone` does nothing.
+`tone` works only for the built-in HUD.
 
-### Example coding raid
+JSON config no longer controls HUD size.
+For config-based custom textures, use fixed bar size `120x12`.
+If you register the raid from Java API, you can still set custom bar size there.
+
+
+## Commands
+Available commands are `/raidon start <id> [x y z]`, `/raidon stop <id>`, `/raidon reload`, and `/raidon activeraids`.
+
+## API Section
+Public API includes `ru.xaoser.raidon.api.RaidonApi`, `ru.xaoser.raidon.api.RaidRegistration`, `ru.xaoser.raidon.api.RaidBuilder`, `ru.xaoser.raidon.api.WaveBuilder`, and `ru.xaoser.raidon.api.RaidGuiBuilder`.
+
+### Build raid from code
 ```java
 ResourceLocation raidId = new ResourceLocation("mymod", "library_raid");
 
 Raid raid = new RaidBuilder(raidId)
+        .name("Library Raid")
         .difficulty(3.0F)
         .addWave(w -> w
                 .mob(10, EntityType.ZOMBIE, SpawnBehavior.HOSTILE, null, List.of(), MobTargeting.defaults(),
@@ -523,7 +452,7 @@ Raid raid = new RaidBuilder(raidId)
         .build();
 ```
 
-### Example registration
+### Register raid from code
 ```java
 RaidGuiSettings gui = RaidGuiBuilder.create()
         .progressTextures(
@@ -544,43 +473,22 @@ RaidRegistration registration = new RaidRegistration(
 RaidonApi.registerRaid(registration);
 ```
 
+Important thing:
+- config JSON no longer controls HUD size
+- Java API still can control custom bar size with `RaidGuiBuilder.size(...)`
+
 ### Start and stop from code
 ```java
 RaidonApi.startRaid(raidId, serverLevel, centerPos);
 RaidonApi.stopRaid(raidId);
 ```
 
-## Custom progress bar
-If you want custom raid HUD bar:
-```json
-"gui": {
-  "progress_empty": "mymod:gui/raid_bar_empty.png",
-  "progress_full": "mymod:gui/raid_bar_full.png",
-  "size": "256, 24"
-}
-```
 
-How it works:
-- `progress_empty` = full empty bar texture
-- `progress_full` = full filled bar texture
-- both textures render in same place and same size
-- `progress_full` is clipped from left to right by remaining mob progress
-- texts with wave and mob count stay visible
-- old black background is not rendered when custom bar is used
-
-Best way to make textures:
-- use same width and height as `gui.size`
-- `progress_empty` and `progress_full` must be exactly same size
-- keep left/right borders in same pixels on both textures
-- put only bar art in texture, not giant full-screen background
-- safe sizes: `180x18`, `240x20`, `256x24`
-
-If you want old config style, `main` + `progress` still works as legacy alias for empty/full bar.
-
-## Small recommendation
-- register raids in server lifecycle
-- use unique id for every raid
-- if you want default GUI, just do not set custom texture
-- if you want fully own mob brain, disable built-in raid AI
-- if something explodes, remember:
-  this is alpha, brother
+> [!TIP]
+> - use `Name` for raid name
+> - register raids in server lifecycle
+> - use unique id for every raid
+> - if you want default GUI, just do not set custom texture
+> - if you want fully own mob brain, disable built-in raid AI
+> - if something explodes, remember:
+    this is beta, brother :feelsgood:
