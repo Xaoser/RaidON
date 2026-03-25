@@ -37,52 +37,89 @@ Then yep, this library for you.
 
 ## Quick start
 You want a quick start using this mod, okay, bellow is example config of raid, you must copy this **_json_** and past in path `your_minecraft/config/raidon/raids/`.\
-if you already run your game, in this path you already have example raid config, you can configure this file or create new.\
+if you already run your game, in this path you already have example raid config, you can configure this file or create new.
 > [!TIP]\
 > When you changed something in json file, you don't have to restart the game, instead you can write the command `/raidon restart`
 
 
 ```json
 {
-  "Name": "Example Raid",
+  "name": "Example",
   "id": "raidon:example_raid",
-  "difficulty": 5,
+  "difficulty": 2,
   "start": {
     "event": "on_kill",
     "entity": "minecraft:zombie",
-    "count": 10,
-    "cooldown_ticks": 200
+    "count": "4",
+    "conditions": [
+      { "type": "min_players", "value": 1 }
+    ]
   },
+
+  "on_raid_start": [
+    { "type": "title", "text": "&1Raid started!" },
+    { "type": "effect", "effect": "minecraft:resistance", "duration": 200, "amplifier": 0 },
+    { "type": "sound", "sound": "minecraft:entity.wither.spawn", "volume": 1.5, "pitch": 1.0 }
+  ],
   "points": {
     "mainpoint": {"x": 0, "y": 70, "z": 0},
     "raidspawnpoint": {"x": 64, "y": 70, "z": 64},
-    "raidpoint": {"x": 0, "y": 70, "z": 0},
-    "mob_wander_radius": 24
+    "raidpoint": {"x": 0, "y": 70, "z": 0}
   },
   "gui": {
-    "tone": "blue"
+    "tone": "green"
   },
+  "drops": { "global": [
+    { "item": "minecraft:emerald", "min": 1, "max": 100, "chance": 100 },
+    { "item": "minecraft:iron_nugget", "min": 1, "max": 3, "chance": 25 }
+  ]
+  },
+  "spawn": { "min_radius": 18, "max_radius": 60, "attempts_per_mob": 12, "require_ground": true, "avoid_water": true  },
   "waves": [
-    {
-      "mobs": [
-        {
-          "type": "minecraft:zombie",
-          "count": 20,
-          "ai": "hostile",
-          "damage": 3.0
-        }
-      ],
-      "on_start": [
-        { "type": "title", "text": "&6&lZombie Raid" },
-        { "type": "sound", "sound": "minecraft:block.bell.use" }
-      ],
+    {"mobs": [
+      {"type": "minecraft:zombie",
+        "count": 40,
+        "ai": "aggressive",
+        "damage": 3.0,
+        "targets": {
+          "whitelist": {"attack": ["all", "minecraft:zombie", "minecraft:player"], "ignore": ["minecraft:cow"]},
+          "blacklist": {"attack": ["none"], "ignore": "none"}
+        },
+        "drops": [
+          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+        ]
+      },
+      {"type": "minecraft:zombie",
+        "count": 0,
+        "ai": "aggressive",
+        "damage": 3.0,
+        "drops": [
+          { "item": "minecraft:leather", "min": 0, "max": 1, "chance": 100 }
+        ]
+      }
+    ],
+      "complete": {"type": "all_dead" },
       "on_end": [
-        { "type": "broadcast", "text": "&aWave finished" }
+        { "type": "broadcast", "text": "Волна 1 отбита." }
       ]
+    },
+    {"mobs": [
+      { "type": "minecraft:zombie",
+        "count": 6,
+        "ai": "aggressive",
+        "damage": 3.0
+      },
+      {"type": "minecraft:zombie",
+        "count": 2,
+        "ai": "hostile",
+        "damage": 3.0
+      }
+    ],
+      "complete": { "type": "all_dead" }
     }
   ],
   "on_raid_end": [
-    { "type": "broadcast", "text": "&6Raid is over" }
+    { "type": "broadcast", "text": "congratulation!" }
   ]
 }
 ```
