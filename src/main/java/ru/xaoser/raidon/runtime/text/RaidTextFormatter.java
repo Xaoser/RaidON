@@ -1,6 +1,7 @@
 package ru.xaoser.raidon.runtime.text;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -14,11 +15,15 @@ public final class RaidTextFormatter {
     }
 
     public static Component parse(@Nullable String raw) {
+        return parse(raw, null);
+    }
+
+    public static Component parse(@Nullable String raw, @Nullable HolderLookup.Provider registries) {
         if (raw == null || raw.isEmpty()) {
             return Component.empty();
         }
 
-        Component json = tryParseJson(raw);
+        Component json = tryParseJson(raw, registries);
         if (json != null) {
             return json;
         }
@@ -54,7 +59,10 @@ public final class RaidTextFormatter {
     }
 
     @Nullable
-    private static Component tryParseJson(String raw) {
+    private static Component tryParseJson(String raw, @Nullable HolderLookup.Provider registries) {
+        if (registries == null) {
+            return null;
+        }
         String trimmed = raw.trim();
         if (trimmed.isEmpty()) {
             return Component.empty();
@@ -63,7 +71,7 @@ public final class RaidTextFormatter {
             return null;
         }
         try {
-            return Component.Serializer.fromJson(trimmed);
+            return Component.Serializer.fromJson(trimmed, registries);
         } catch (Exception ignored) {
             return null;
         }

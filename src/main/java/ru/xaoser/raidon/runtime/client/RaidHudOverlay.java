@@ -1,18 +1,18 @@
 package ru.xaoser.raidon.runtime.client;
 
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.LayeredDraw;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.GameType;
-import net.neoforged.neoforge.client.gui.overlay.ExtendedGui;
-import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
 import ru.xaoser.raidon.runtime.text.RaidTextFormatter;
 
 import java.util.Locale;
 
-public enum RaidHudOverlay implements IGuiOverlay {
+public enum RaidHudOverlay implements LayeredDraw.Layer {
     INSTANCE;
 
     private static final int DEFAULT_PANEL_WIDTH = 156;
@@ -22,7 +22,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
     private static final int PANEL_BOTTOM = 10;
 
     @Override
-    public void render(ExtendedGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+    public void render(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
         if (!RaidHudState.shouldRender()) return;
 
         Minecraft mc = Minecraft.getInstance();
@@ -42,13 +42,15 @@ public enum RaidHudOverlay implements IGuiOverlay {
         float waveProgress = RaidHudState.smoothWaveProgress();
         int panelWidth = useCustomGui ? Math.max(1, RaidHudState.barWidth()) : DEFAULT_PANEL_WIDTH;
         int panelHeight = useCustomGui ? Math.max(1, RaidHudState.barHeight()) : DEFAULT_PANEL_HEIGHT;
+        int screenWidth = guiGraphics.guiWidth();
+        int screenHeight = guiGraphics.guiHeight();
         int x = screenWidth - panelWidth - PANEL_MARGIN;
         int y = screenHeight - panelHeight - PANEL_BOTTOM;
 
         String raidName = RaidHudState.raidName();
         Component raidText = raidName == null || raidName.isBlank()
                 ? Component.translatable("raidon.hud.raid")
-                : RaidTextFormatter.parse(raidName);
+                : RaidTextFormatter.parse(raidName, mc.level != null ? mc.level.registryAccess() : null);
         Component waveText = Component.translatable("raidon.hud.wave", waveIndex + 1, wavesTotal);
         Component mobsText = Component.translatable("raidon.hud.mobs", alive, total);
 

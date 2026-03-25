@@ -62,19 +62,19 @@ public final class RaidonCommand {
 
         switch (result) {
             case STARTED -> {
-                source.sendSuccess(() -> Component.translatable("raidon.command.start.started", id, center), true);
+                source.sendSuccess(() -> Component.translatable("raidon.command.start.started", id.toString(), formatPos(center)), true);
                 return 1;
             }
             case ALREADY_ACTIVE -> {
-                source.sendFailure(Component.translatable("raidon.command.start.already_active", id));
+                source.sendFailure(Component.translatable("raidon.command.start.already_active", id.toString()));
                 return 0;
             }
             case AREA_BUSY -> {
-                source.sendFailure(Component.translatable("raidon.command.start.busy", id));
+                source.sendFailure(Component.translatable("raidon.command.start.busy", id.toString()));
                 return 0;
             }
             case NOT_FOUND -> {
-                source.sendFailure(Component.translatable("raidon.command.start.not_found", id));
+                source.sendFailure(Component.translatable("raidon.command.start.not_found", id.toString()));
                 return 0;
             }
             default -> {
@@ -108,8 +108,8 @@ public final class RaidonCommand {
             int waveDisplay = status.waveIndex() + 1;
             source.sendSuccess(() -> Component.translatable(
                     "raidon.command.active.entry",
-                    status.id(),
-                    status.center(),
+                    status.id().toString(),
+                    formatPos(status.center()),
                     waveDisplay,
                     status.totalWaves(),
                     status.aliveInWave(),
@@ -122,11 +122,15 @@ public final class RaidonCommand {
     private static int stopRaid(CommandSourceStack source, ResourceLocation id) {
         boolean stopped = RaidManager.stopRaid(id);
         if (stopped) {
-            source.sendSuccess(() -> Component.translatable("raidon.command.stop.stopped", id), true);
+            source.sendSuccess(() -> Component.translatable("raidon.command.stop.stopped", id.toString()), true);
             return 1;
         } else {
-            source.sendFailure(Component.translatable("raidon.command.stop.not_found", id));
+            source.sendFailure(Component.translatable("raidon.command.stop.not_found", id.toString()));
             return 0;
         }
+    }
+
+    private static String formatPos(BlockPos pos) {
+        return pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
     }
 }

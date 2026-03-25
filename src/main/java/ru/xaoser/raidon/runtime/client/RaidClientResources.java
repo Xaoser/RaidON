@@ -1,6 +1,8 @@
 package ru.xaoser.raidon.runtime.client;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.repository.Pack;
@@ -11,6 +13,7 @@ import net.neoforged.neoforge.event.AddPackFindersEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.function.UnaryOperator;
 
 public final class RaidClientResources {
@@ -19,7 +22,7 @@ public final class RaidClientResources {
     private static final String PACK_META = """
             {
               "pack": {
-                "pack_format": 18,
+                "pack_format": 34,
                 "description": "RaidON config resources"
               }
             }
@@ -40,15 +43,18 @@ public final class RaidClientResources {
         ensureLayout();
 
         event.addRepositorySource(consumer -> {
-            Pack.ResourcesSupplier supplier = new PathPackResources.PathResourcesSupplier(ROOT, false);
-            Pack pack = Pack.readMetaAndCreate(
+            PackLocationInfo location = new PackLocationInfo(
                     PACK_ID,
                     Component.literal("RaidON Config Resources"),
-                    false,
+                    PackSource.create(UnaryOperator.identity(), true),
+                    Optional.empty()
+            );
+            Pack.ResourcesSupplier supplier = new PathPackResources.PathResourcesSupplier(ROOT);
+            Pack pack = Pack.readMetaAndCreate(
+                    location,
                     supplier,
                     PackType.CLIENT_RESOURCES,
-                    Pack.Position.TOP,
-                    PackSource.create(UnaryOperator.identity(), true)
+                    new PackSelectionConfig(false, Pack.Position.TOP, false)
             );
             if (pack != null) {
                 consumer.accept(pack);

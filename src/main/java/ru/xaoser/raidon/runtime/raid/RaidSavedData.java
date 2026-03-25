@@ -1,5 +1,6 @@
 package ru.xaoser.raidon.runtime.raid;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -21,7 +22,7 @@ final class RaidSavedData extends SavedData {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
     }
 
-    static RaidSavedData load(CompoundTag tag) {
+    static RaidSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         RaidSavedData data = new RaidSavedData();
         ListTag raids = tag.getList("raids", Tag.TAG_COMPOUND);
         for (int i = 0; i < raids.size(); i++) {
@@ -43,7 +44,7 @@ final class RaidSavedData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag raids = new ListTag();
         for (CompoundTag activeRaidTag : activeRaidTags) {
             raids.add(activeRaidTag.copy());

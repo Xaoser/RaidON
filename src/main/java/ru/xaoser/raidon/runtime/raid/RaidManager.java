@@ -16,13 +16,13 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.event.TickEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.player.EntityItemPickupEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.TradeWithVillagerEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.Raidon;
@@ -33,7 +33,7 @@ import ru.xaoser.raidon.runtime.raid.ai.MobAiHelper;
 
 import java.util.*;
 
-@Mod.EventBusSubscriber(modid = Raidon.MODID)
+@EventBusSubscriber(modid = Raidon.MODID)
 public final class RaidManager {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int MAX_RAID_TICKS_PER_SERVER_TICK = 4;
@@ -211,8 +211,7 @@ public final class RaidManager {
     }
 
     @SubscribeEvent
-    public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
+    public static void onServerTick(ServerTickEvent.Post event) {
         tickAll();
         persistActiveState(event.getServer());
         autoStartByTick(event.getServer());
@@ -278,9 +277,9 @@ public final class RaidManager {
 
 
     @SubscribeEvent
-    public static void onItemPickup(EntityItemPickupEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        ResourceLocation itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(event.getItem().getItem().getItem());
+    public static void onItemPickup(ItemEntityPickupEvent.Post event) {
+        if (!(event.getPlayer() instanceof ServerPlayer player)) return;
+        ResourceLocation itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(event.getOriginalStack().getItem());
         handlePlayerTriggerEvent(player, RaidStartSettings.Trigger.ON_ITEM_PICKUP,
                 settings -> settings.item() == null || settings.item().equals(itemId));
     }
@@ -318,17 +317,15 @@ public final class RaidManager {
     private record TriggerStartContext(ServerLevel level, BlockPos center) {}
 
     static void sendProgress(ActiveRaid raid, boolean finished) {
-        if (RaidNetwork.channel() == null) return;
         RaidProgressS2CPacket packet = new RaidProgressS2CPacket(finished ? null : raid.payload());
         for (ServerPlayer player : raid.level().players()) {
             if (finished || isPlayerInRange(player, raid.center(), raid.hudRange())) {
-                RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), packet);
+                PacketDistributor.sendToPlayer(player, packet);
             }
         }
     }
 
     private static void syncPlayer(ServerPlayer player) {
-        if (RaidNetwork.channel() == null) return;
         RaidProgressS2CPacket packet = new RaidProgressS2CPacket(null);
         for (ActiveRaid raid : ACTIVE.values()) {
             if (raid.level() == player.serverLevel() && isPlayerInRange(player, raid.center(), raid.hudRange())) {
@@ -336,7 +333,7 @@ public final class RaidManager {
                 break;
             }
         }
-        RaidNetwork.channel().send(PacketDistributor.PLAYER.with(() -> player), packet);
+        PacketDistributor.sendToPlayer(player, packet);
     }
 
     private static void syncAllPlayers() {
@@ -404,7 +401,13 @@ public final class RaidManager {
             return false;
         }
         var key = net.minecraft.resources.ResourceKey.create(Registries.STRUCTURE, structureId);
-        if (player.serverLevel().structureManager().getStructureWithPieceAt(player.blockPosition(), key).isValid()) {
+        var registry = player.serverLevel().registryAccess().registryOrThrow(Registries.STRUCTURE);
+        Optional<? extends Holder<Structure>> holderOptional = registry.getHolder(key);
+        if (holderOptional.isEmpty()) {
+            return false;
+        }
+        Structure structure = holderOptional.get().value();
+        if (player.serverLevel().structureManager().getStructureWithPieceAt(player.blockPosition(), structure).isValid()) {
             return true;
         }
         int scanRadius = Math.max(16, radius);
@@ -416,7 +419,7 @@ public final class RaidManager {
                     continue;
                 }
                 BlockPos probe = origin.offset(dx, 0, dz);
-                if (player.serverLevel().structureManager().getStructureWithPieceAt(probe, key).isValid()) {
+                if (player.serverLevel().structureManager().getStructureWithPieceAt(probe, structure).isValid()) {
                     return true;
                 }
             }

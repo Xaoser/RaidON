@@ -2,13 +2,21 @@ package ru.xaoser.raidon.runtime.network.packet;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
-import net.neoforged.neoforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import ru.xaoser.raidon.Raidon;
 
-public final class RaidPlaySoundS2CPacket {
+public final class RaidPlaySoundS2CPacket implements CustomPacketPayload {
+    public static final Type<RaidPlaySoundS2CPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "raid_play_sound"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, RaidPlaySoundS2CPacket> STREAM_CODEC =
+            StreamCodec.ofMember(RaidPlaySoundS2CPacket::encode, RaidPlaySoundS2CPacket::decode);
+
     private final ResourceLocation soundId;
     private final SoundSource source;
     private final float volume;
@@ -21,14 +29,19 @@ public final class RaidPlaySoundS2CPacket {
         this.pitch = pitch;
     }
 
-    public void encode(FriendlyByteBuf buf) {
+    @Override
+    public Type<RaidPlaySoundS2CPacket> type() {
+        return TYPE;
+    }
+
+    public void encode(RegistryFriendlyByteBuf buf) {
         buf.writeResourceLocation(soundId);
         buf.writeEnum(source);
         buf.writeFloat(volume);
         buf.writeFloat(pitch);
     }
 
-    public static RaidPlaySoundS2CPacket decode(FriendlyByteBuf buf) {
+    public static RaidPlaySoundS2CPacket decode(RegistryFriendlyByteBuf buf) {
         return new RaidPlaySoundS2CPacket(
                 buf.readResourceLocation(),
                 buf.readEnum(SoundSource.class),
@@ -37,9 +50,8 @@ public final class RaidPlaySoundS2CPacket {
         );
     }
 
-    public void handle(NetworkEvent.Context ctx) {
-        ctx.enqueueWork(this::playClientSound);
-        ctx.setPacketHandled(true);
+    public static void handle(RaidPlaySoundS2CPacket payload, IPayloadContext context) {
+        context.enqueueWork(payload::playClientSound);
     }
 
     private void playClientSound() {

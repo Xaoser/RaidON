@@ -6,10 +6,9 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.neoforged.neoforge.client.event.RegisterGuiOverlaysEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddPackFindersEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
@@ -28,18 +27,18 @@ public class Raidon {
     public static final String MODID = "raidon";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public Raidon() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
-
+    public Raidon(IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
-
+        modEventBus.addListener(RaidNetwork::register);
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            modEventBus.addListener(ClientModEvents::addPackFinders);
+            modEventBus.addListener(ClientModEvents::registerOverlays);
+        }
         NeoForge.EVENT_BUS.register(this);
-
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Hello, if you read this, you having a great day! (from RaidON)");
-        event.enqueueWork(RaidNetwork::register);
     }
 
     @SubscribeEvent
@@ -55,13 +54,7 @@ public class Raidon {
         RaidManager.onServerStop();
     }
 
-    @Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
     public static class ClientModEvents {
-
-        @SubscribeEvent
-        public static void onClientSetup(FMLClientSetupEvent event) {
-
-        }
 
         @SubscribeEvent
         public static void addPackFinders(AddPackFindersEvent event) {
@@ -69,8 +62,8 @@ public class Raidon {
         }
 
         @SubscribeEvent
-        public static void registerOverlays(RegisterGuiOverlaysEvent event) {
-            event.registerAboveAll(new ResourceLocation(MODID, "raidon_progress"), RaidHudOverlay.INSTANCE);
+        public static void registerOverlays(RegisterGuiLayersEvent event) {
+            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "raidon_progress"), RaidHudOverlay.INSTANCE);
         }
     }
 }
