@@ -16,7 +16,7 @@ public enum RaidHudOverlay implements IGuiOverlay {
     INSTANCE;
 
     private static final int DEFAULT_PANEL_WIDTH = 156;
-    private static final int DEFAULT_PANEL_HEIGHT = 38;
+    private static final int DEFAULT_PANEL_HEIGHT = 44;
     private static final int DEFAULT_BAR_HEIGHT = 10;
     private static final int PANEL_MARGIN = 14;
     private static final int PANEL_BOTTOM = 19;
@@ -87,10 +87,10 @@ public enum RaidHudOverlay implements IGuiOverlay {
         int right = x + width;
         int bottom = y + height;
         int barX = left + 10;
-        int barY = top + 18;
+        int barY = top + 19;
         int barWidth = width - 20;
         int filledWidth = Math.max(0, Math.min(barWidth, Math.round(barWidth * progress)));
-        int infoY = barY + DEFAULT_BAR_HEIGHT + 4;
+        int infoY = barY + DEFAULT_BAR_HEIGHT + 5;
         int[] palette = resolveDefaultPalette(RaidHudState.hudTone());
 
         guiGraphics.fill(left + 2, top + 2, right + 2, bottom + 2, palette[0]);
@@ -114,27 +114,28 @@ public enum RaidHudOverlay implements IGuiOverlay {
     private static int[] resolveDefaultPalette(String tone) {
         String normalized = tone == null ? "" : tone.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "blue", "navy", "синий" -> new int[]{
+            case "blue", "navy", "\u0441\u0438\u043d\u0438\u0439" -> new int[]{
                     0x55000000, 0xCC0A111C, 0xCC162437, 0x8869A8E4,
                     0xAA07111C, 0xFF14263A, 0xFF27486F, 0xFF5FA9FF,
                     0xFFA9D6FF, 0xFFE3F3FF, 0xFFF1F8FF, 0xFFD7EBFF
             };
-            case "green", "emerald", "зелёный", "зеленый" -> new int[]{
+            case "green", "emerald", "\u0437\u0435\u043b\u0451\u043d\u044b\u0439", "\u0437\u0435\u043b\u0435\u043d\u044b\u0439" -> new int[]{
                     0x55000000, 0xCC0A160F, 0xCC16281D, 0x8879C66B,
                     0xAA08110B, 0xFF173222, 0xFF214631, 0xFF49B36C,
                     0xFF9BE2A9, 0xFFE3F8D9, 0xFFF0FAEA, 0xFFD6F1D7
             };
-            case "purple", "violet", "фиолетовый" -> new int[]{
+            case "purple", "violet", "\u0444\u0438\u043e\u043b\u0435\u0442\u043e\u0432\u044b\u0439" -> new int[]{
                     0x55000000, 0xCC140A1A, 0xCC251531, 0x889C73D4,
                     0xAA0E0812, 0xFF2D1A3A, 0xFF42235A, 0xFF9460E8,
                     0xFFC9A3FF, 0xFFF0E6FF, 0xFFF7F0FF, 0xFFE6D7FF
             };
-            case "gold", "yellow", "orange", "золотой", "жёлтый", "желтый", "оранжевый" -> new int[]{
+            case "gold", "yellow", "orange", "\u0437\u043e\u043b\u043e\u0442\u043e\u0439", "\u0436\u0451\u043b\u0442\u044b\u0439",
+                    "\u0436\u0435\u043b\u0442\u044b\u0439", "\u043e\u0440\u0430\u043d\u0436\u0435\u0432\u044b\u0439" -> new int[]{
                     0x55000000, 0xCC1A1207, 0xCC2C1E0D, 0x88D29C32,
                     0xAA120B04, 0xFF3B2510, 0xFF5A3715, 0xFFE18A28,
                     0xFFFFD07A, 0xFFFFE7A3, 0xFFFFF0CC, 0xFFFFE2B8
             };
-            case "gray", "grey", "silver", "серый", "серебряный" -> new int[]{
+            case "gray", "grey", "silver", "\u0441\u0435\u0440\u044b\u0439", "\u0441\u0435\u0440\u0435\u0431\u0440\u044f\u043d\u044b\u0439" -> new int[]{
                     0x55000000, 0xCC121212, 0xCC242424, 0x888B8B8B,
                     0xAA0D0D0D, 0xFF2D2D2D, 0xFF444444, 0xFF8A8A8A,
                     0xFFCFCFCF, 0xFFF2F2F2, 0xFFFAFAFA, 0xFFE4E4E4

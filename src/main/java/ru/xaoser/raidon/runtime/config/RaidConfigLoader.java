@@ -76,7 +76,6 @@ public final class RaidConfigLoader {
     "raidpoint": {"x": 0, "y": 70, "z": 0}
   },
   "gui": {
-    "size": "120, 40",
     "tone": "blue"
   },
   "drops": { "global": [
@@ -637,8 +636,7 @@ public final class RaidConfigLoader {
                 String progress,
                 @SerializedName(value = "progress_empty", alternate = {"progressEmpty", "empty", "bar_empty", "barEmpty"}) String progress_empty,
                 @SerializedName(value = "progress_full", alternate = {"progressFull", "full", "bar_full", "barFull"}) String progress_full,
-                String tone,
-                JsonElement size
+                String tone
         ) {}
 
         public record Wave(List<Mob> mobs, Completion complete,
@@ -843,9 +841,8 @@ public final class RaidConfigLoader {
         ResourceLocation progress = parseTexture(gui.progress(), logger, file, "gui.progress");
         ResourceLocation progressEmpty = parseTexture(gui.progress_empty(), logger, file, "gui.progress_empty");
         ResourceLocation progressFull = parseTexture(gui.progress_full(), logger, file, "gui.progress_full");
-        int[] size = parseGuiSize(gui.size(), logger, file);
-
-        return new RaidGuiSettings(main, progress, progressEmpty, progressFull, gui.tone(), size[0], size[1]);
+        return new RaidGuiSettings(main, progress, progressEmpty, progressFull, gui.tone(),
+                RaidGuiSettings.DEFAULT_WIDTH, RaidGuiSettings.DEFAULT_HEIGHT);
     }
 
     private static ResourceLocation parseTexture(String value, Logger logger, Path file, String key) {
@@ -865,39 +862,6 @@ public final class RaidConfigLoader {
             return null;
         }
         return parsed;
-    }
-
-    private static int[] parseGuiSize(JsonElement value, Logger logger, Path file) {
-        int width = RaidGuiSettings.DEFAULT_WIDTH;
-        int height = RaidGuiSettings.DEFAULT_HEIGHT;
-
-        if (value == null || value.isJsonNull()) {
-            return new int[]{width, height};
-        }
-
-        if (value.isJsonArray() && value.getAsJsonArray().size() >= 2) {
-            try {
-                width = value.getAsJsonArray().get(0).getAsInt();
-                height = value.getAsJsonArray().get(1).getAsInt();
-                return new int[]{width, height};
-            } catch (Exception ignored) {
-            }
-        }
-
-        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
-            String[] parts = value.getAsString().trim().split("[,\\s]+");
-            if (parts.length >= 2) {
-                try {
-                    width = Integer.parseInt(parts[0]);
-                    height = Integer.parseInt(parts[1]);
-                    return new int[]{width, height};
-                } catch (NumberFormatException ignored) {
-                }
-            }
-        }
-
-        logger.warn("[Raidon] Invalid gui.size in {}. Expected [w,h] or string 'w,h'", file.getFileName());
-        return new int[]{width, height};
     }
 
     private static RaidStartSettings parseStartSettings(RaidFile.Start start, JsonElement startNbt, boolean nbtSystemEnabled,
