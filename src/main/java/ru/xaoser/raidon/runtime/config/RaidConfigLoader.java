@@ -20,8 +20,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraft.commands.CommandSourceStack;
+import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import ru.xaoser.raidon.api.Raid;
 import ru.xaoser.raidon.api.RaidBuilder;
@@ -549,8 +549,11 @@ public final class RaidConfigLoader {
 
         final ResourceLocation rl;
         try {
-            rl = new ResourceLocation(id.trim());
+            rl = ResourceLocation.tryParse(id.trim());
         } catch (Exception e) {
+            return null;
+        }
+        if (rl == null) {
             return null;
         }
 

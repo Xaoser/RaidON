@@ -2,13 +2,16 @@ package ru.xaoser.raidon.runtime.network;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.network.simple.SimpleChannel;
+import net.neoforged.neoforge.network.NetworkRegistry;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.PlayNetworkDirection;
+import net.neoforged.neoforge.network.simple.SimpleChannel;
 import ru.xaoser.raidon.Raidon;
 import ru.xaoser.raidon.runtime.network.packet.RaidPlaySoundS2CPacket;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 import net.minecraft.sounds.SoundSource;
+
+import java.util.Optional;
 
 public final class RaidNetwork {
     private static final String PROTOCOL_VERSION = "1";
@@ -38,14 +41,16 @@ public final class RaidNetwork {
                 RaidProgressS2CPacket.class,
                 RaidProgressS2CPacket::encode,
                 RaidProgressS2CPacket::decode,
-                RaidProgressS2CPacket::handle
+                RaidProgressS2CPacket::handle,
+                Optional.of(PlayNetworkDirection.PLAY_TO_CLIENT)
         );
         channel.registerMessage(
                 nextId(),
                 RaidPlaySoundS2CPacket.class,
                 RaidPlaySoundS2CPacket::encode,
                 RaidPlaySoundS2CPacket::decode,
-                RaidPlaySoundS2CPacket::handle
+                RaidPlaySoundS2CPacket::handle,
+                Optional.of(PlayNetworkDirection.PLAY_TO_CLIENT)
         );
     }
 

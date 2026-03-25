@@ -4,6 +4,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.saveddata.SavedData.Factory;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
@@ -12,11 +13,12 @@ import java.util.List;
 
 final class RaidSavedData extends SavedData {
     private static final String DATA_NAME = "raidon_active_raids";
+    private static final Factory<RaidSavedData> FACTORY = new Factory<>(RaidSavedData::new, RaidSavedData::load, null);
 
     private final List<CompoundTag> activeRaidTags = new ArrayList<>();
 
     static RaidSavedData get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(RaidSavedData::load, RaidSavedData::new, DATA_NAME);
+        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
     }
 
     static RaidSavedData load(CompoundTag tag) {

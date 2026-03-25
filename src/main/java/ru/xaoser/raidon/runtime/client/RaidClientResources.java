@@ -5,8 +5,8 @@ import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
-import net.minecraftforge.event.AddPackFindersEvent;
-import net.minecraftforge.fml.loading.FMLPaths;
+import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.event.AddPackFindersEvent;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,7 +19,7 @@ public final class RaidClientResources {
     private static final String PACK_META = """
             {
               "pack": {
-                "pack_format": 15,
+                "pack_format": 18,
                 "description": "RaidON config resources"
               }
             }
@@ -40,7 +40,7 @@ public final class RaidClientResources {
         ensureLayout();
 
         event.addRepositorySource(consumer -> {
-            Pack.ResourcesSupplier supplier = id -> new PathPackResources(id, ROOT, false);
+            Pack.ResourcesSupplier supplier = new PathPackResources.PathResourcesSupplier(ROOT, false);
             Pack pack = Pack.readMetaAndCreate(
                     PACK_ID,
                     Component.literal("RaidON Config Resources"),

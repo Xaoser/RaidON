@@ -6,11 +6,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.NetworkEvent;
 
 public final class RaidPlaySoundS2CPacket {
     private final ResourceLocation soundId;
@@ -41,9 +37,8 @@ public final class RaidPlaySoundS2CPacket {
         );
     }
 
-    public void handle(Supplier<NetworkEvent.Context> ctxSupplier) {
-        NetworkEvent.Context ctx = ctxSupplier.get();
-        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> this::playClientSound));
+    public void handle(NetworkEvent.Context ctx) {
+        ctx.enqueueWork(this::playClientSound);
         ctx.setPacketHandled(true);
     }
 

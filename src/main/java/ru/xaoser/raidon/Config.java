@@ -1,8 +1,8 @@
 package ru.xaoser.raidon;
 
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.config.ModConfigEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.config.ModConfigEvent;
 
 @Mod.EventBusSubscriber(modid = Raidon.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class Config {

@@ -560,7 +560,7 @@ public final class MobAiHelper {
         }
 
         private double getAttackReachSqr(LivingEntity enemy) {
-            double vanillaReach = mob.getMeleeAttackRangeSqr(enemy);
+            double vanillaReach = (double) (mob.getBbWidth() * 2.0F * mob.getBbWidth() * 2.0F + enemy.getBbWidth());
             double paddedReach = Math.max(MIN_COMBAT_REACH, mob.getBbWidth() + enemy.getBbWidth() + 0.75D);
             return Math.max(vanillaReach, paddedReach * paddedReach);
         }
