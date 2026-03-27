@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "ru.xaoser.raidon.fabric.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MobConversionGuardMixin",
+    "MobGoalSelectorsAccessorMixin",
+    "PigConversionGuardMixin",
+    "ItemEntityMixin",
+    "MerchantResultSlotMixin",
+    "VillagerConversionGuardMixin",
+    "ZombieConversionGuardMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

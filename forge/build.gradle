@@ -1,0 +1,204 @@
+plugins {
+    id 'com.github.johnrengelman.shadow'
+}
+
+architectury {
+    platformSetupLoomIde()
+    forge()
+}
+
+loom {
+    forge {
+        mixinConfig 'raidon.forge.mixins.json'
+    }
+    mods {
+        main {
+            sourceSet sourceSets.main
+            sourceSet project(':common').sourceSets.main
+        }
+    }
+}
+
+sourceSets {
+    main {
+        compileClasspath += project(':common').sourceSets.main.output
+        runtimeClasspath += project(':common').sourceSets.main.output
+    }
+}
+
+def isMergedForgeDevJarPath = { String entry ->
+    def normalized = entry.replace('\\', '/').toLowerCase(Locale.ROOT)
+    normalized.contains('/forge-') && normalized.contains('-minecraft-merged')
+}
+
+def sanitizeForgeDevClasspathEntries = { List<String> entries ->
+    entries.findAll { entry -> !isMergedForgeDevJarPath(entry) }
+}
+
+def createLegacyMinecraftForgeJar = { File sourceJar ->
+    def targetDir = file("${buildDir}/forge-dev")
+    targetDir.mkdirs()
+
+    def targetJar = new File(targetDir, sourceJar.name.replace('.jar', '-legacy-minecraft.jar'))
+    if (targetJar.exists()) {
+        targetJar.delete()
+    }
+
+    def tempJar = new File(targetDir, "${targetJar.name}.tmp")
+    def zipFile = new java.util.zip.ZipFile(sourceJar)
+    def zipOutputStream = new java.util.zip.ZipOutputStream(new FileOutputStream(tempJar))
+
+    try {
+        zipFile.entries().each { java.util.zip.ZipEntry entry ->
+            if (entry.name == 'META-INF/mods.toml') {
+                return
+            }
+
+            def newEntry = new java.util.zip.ZipEntry(entry.name)
+            newEntry.time = entry.time
+            zipOutputStream.putNextEntry(newEntry)
+
+            if (!entry.isDirectory()) {
+                if (entry.name == 'META-INF/MANIFEST.MF') {
+                    def manifest = new java.util.jar.Manifest(zipFile.getInputStream(entry))
+                    manifest.mainAttributes.remove(new java.util.jar.Attributes.Name('Automatic-Module-Name'))
+                    manifest.write(zipOutputStream)
+                } else {
+                    zipOutputStream.write(zipFile.getInputStream(entry).bytes)
+                }
+            }
+
+            zipOutputStream.closeEntry()
+        }
+    } finally {
+        zipOutputStream.close()
+        zipFile.close()
+    }
+
+    java.nio.file.Files.move(
+            tempJar.toPath(),
+            targetJar.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+    )
+
+    targetJar
+}
+
+def patchForgeDevRuntimeClasspath = {
+    def pathSeparatorPattern = java.util.regex.Pattern.quote(File.pathSeparator)
+
+    def architecturyPropertiesFile = file('.gradle/architectury/.properties')
+    if (architecturyPropertiesFile.exists()) {
+        def properties = new Properties()
+        architecturyPropertiesFile.withInputStream { properties.load(it) }
+
+        def classpath = properties.getProperty('architectury.classpath')
+        if (classpath != null) {
+            def originalEntries = classpath.split(pathSeparatorPattern).findAll { !it.isBlank() }
+            def filteredEntries = sanitizeForgeDevClasspathEntries(originalEntries)
+
+            if (filteredEntries.size() != originalEntries.size()) {
+                properties.setProperty('architectury.classpath', filteredEntries.join(File.pathSeparator))
+                architecturyPropertiesFile.withOutputStream {
+                    properties.store(it, 'Architectury Runtime Transformer Properties')
+                }
+                logger.lifecycle('Patched Forge dev Architectury classpath to remove merged Forge jars')
+            }
+        }
+    }
+
+    def remapClasspathFile = file('.gradle/loom-cache/remapClasspath.txt')
+    if (remapClasspathFile.exists()) {
+        def originalEntries = remapClasspathFile.getText('UTF-8').split(pathSeparatorPattern).findAll { !it.isBlank() }
+        def filteredEntries = sanitizeForgeDevClasspathEntries(originalEntries)
+
+        if (filteredEntries.size() != originalEntries.size()) {
+            remapClasspathFile.setText(filteredEntries.join(File.pathSeparator), 'UTF-8')
+            logger.lifecycle('Patched Forge dev remap classpath to remove merged Forge jars')
+        }
+    }
+}
+
+configurations {
+    shadowCommon
+}
+
+dependencies {
+    forge "net.minecraftforge:forge:${rootProject.forge_version}"
+
+    shadowCommon(project(path: ':common', configuration: 'transformProductionForge')) { transitive false }
+}
+
+processResources {
+    def replaceProperties = [
+            minecraft_version_range : rootProject.minecraft_version_range,
+            forge_loader_version_range: rootProject.forge_loader_version_range,
+            forge_version_range     : rootProject.forge_version_range,
+            mod_id                  : rootProject.mod_id,
+            mod_name                : rootProject.mod_name,
+            mod_license             : rootProject.mod_license,
+            mod_version             : project.version,
+            mod_authors             : rootProject.mod_authors,
+            mod_description         : rootProject.mod_description
+    ]
+
+    inputs.properties replaceProperties
+
+    filesMatching('META-INF/mods.toml') {
+        expand replaceProperties
+    }
+}
+
+shadowJar {
+    exclude 'fabric.mod.json'
+    exclude 'architectury.common.json'
+    configurations = [project.configurations.shadowCommon]
+    archiveClassifier = 'dev-shadow'
+}
+
+remapJar {
+    input.set shadowJar.archiveFile
+    dependsOn shadowJar
+}
+
+sourcesJar {
+    def commonSources = project(':common').sourcesJar
+    dependsOn commonSources
+    from commonSources.archiveFile.map { zipTree(it) }
+}
+
+components.java {
+    withVariantsFromConfiguration(project.configurations.shadowRuntimeElements) {
+        skip()
+    }
+}
+
+publishing {
+    publications {
+        register('mavenForge', MavenPublication) {
+            artifactId = "${rootProject.mod_id}-forge"
+            from components.java
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.startsWith('run')) {
+        def runTask = it
+        doFirst {
+            if (runTask.hasProperty('classpath')) {
+                def originalFiles = runTask.classpath.files as List<File>
+                def legacyFiles = originalFiles.collect { file ->
+                    isMergedForgeDevJarPath(file.absolutePath) ? createLegacyMinecraftForgeJar(file) : file
+                }
+
+                if (legacyFiles != originalFiles) {
+                    runTask.systemProperty('legacyClassPath', legacyFiles*.absolutePath.join(File.pathSeparator))
+                    logger.lifecycle('Patched Forge dev legacyClassPath to isolate Minecraft merged jars from the runtime classpath scanner')
+                }
+            }
+
+            patchForgeDevRuntimeClasspath()
+        }
+    }
+}

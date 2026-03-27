@@ -1,11 +1,12 @@
 pluginManagement {
     repositories {
         mavenLocal()
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        maven { url = 'https://maven.creeperhost.net/' }
+        maven { url = 'https://maven.architectury.dev/' }
+        maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://maven.neoforged.net/releases/' }
         gradlePluginPortal()
-        maven {
-            name = 'NeoForged'
-            url = 'https://maven.neoforged.net/releases'
-        }
     }
 }
 
@@ -13,4 +14,11 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
+ext.set("loom_fabric_repository", "https://repo.spongepowered.org/repository/maven-public/")
+
 rootProject.name = 'raidon'
+
+include('common')
+include('fabric')
+include('forge')
+include('neoforge')

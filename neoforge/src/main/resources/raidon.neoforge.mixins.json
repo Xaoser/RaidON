@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "ru.xaoser.raidon.neoforge.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MobConversionGuardMixin",
+    "MobGoalSelectorsAccessorMixin",
+    "PigConversionGuardMixin",
+    "VillagerConversionGuardMixin",
+    "ZombieConversionGuardMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

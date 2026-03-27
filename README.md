@@ -362,7 +362,7 @@ Example:
 ]
 ```
 
-## :exclamation: Visual and Sound
+## Visual and Sound
 Normal sound example:
 
 ```json
@@ -384,39 +384,50 @@ Minimal example:
 ```text
 config/raidon/resources/
 └── assets/
-    └── raidon_sound/
-        ├── sounds.json
-        └── sounds/
-            ├── raid_start.ogg
-            └── raid_loop.ogg
-```
-
-Example `sounds.json`:
-
-```json
-{
-  "raid_start": {
-    "sounds": [
-      "raidon_sound:raid_start"
-    ]
-  },
-  "raid_loop": {
-    "sounds": [
-      {
-        "name": "raidon_sound:raid_loop",
-        "stream": true
-      }
-    ]
-  }
-}
+    └── raidon_cfg/
+        ├── sounds/
+        │   ├── raid_start.ogg
+        │   └── music/
+        │       └── raid_loop.ogg
+        └── textures/
+            └── item/
+                └── raid_horn.png
 ```
 
 Then in raid config:
 
 ```json
-{ "type": "sound", "sound": "raidon_sound:raid_start", "sound_source": "master" }
-{ "type": "loop_sound", "sound": "raidon_sound:raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
+{ "type": "sound", "sound": "raid_start", "sound_source": "master" }
+{ "type": "loop_sound", "sound": "music/raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
 ```
+
+You can also use the full resource ids if you want:
+
+```json
+{ "type": "sound", "sound": "raidon_cfg:raid_start", "sound_source": "master" }
+{ "type": "loop_sound", "sound": "raidon_cfg:music/raid_loop", "sound_source": "music", "repeat_ticks": 1200 }
+```
+
+RaidON now auto-generates `assets/raidon_cfg/sounds.json` from `.ogg` files in `assets/raidon_cfg/sounds/`.
+
+If you need advanced options for one file, place a sidecar file next to it:
+
+```text
+raid_loop.ogg
+raid_loop.sound.json
+```
+
+Example `raid_loop.sound.json`:
+
+```json
+{
+  "stream": true,
+  "subtitle": "Raid loop",
+  "replace": false
+}
+```
+
+Supported sidecar fields: `id`, `stream`, `preload`, `volume`, `pitch`, `weight`, `attenuation_distance`, `subtitle`, `replace`.
 
 > [!TIP]\
 > after changing `.ogg` or `sounds.json`, do `F3+T` or restart client
