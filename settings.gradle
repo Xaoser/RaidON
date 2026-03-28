@@ -21,4 +21,3 @@ rootProject.name = 'raidon'
 include('common')
 include('fabric')
 include('forge')
-include('neoforge')

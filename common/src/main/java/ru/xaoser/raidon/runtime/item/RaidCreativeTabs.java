@@ -60,7 +60,7 @@ public final class RaidCreativeTabs {
 
         ResourceLocation id = normalized.contains(":")
                 ? ResourceLocation.tryParse(normalized)
-                : ResourceLocation.withDefaultNamespace(normalized);
+                : ResourceLocation.tryBuild(ResourceLocation.DEFAULT_NAMESPACE, normalized);
         if (id == null) {
             return null;
         }
@@ -72,6 +72,6 @@ public final class RaidCreativeTabs {
     }
 
     private static ResourceKey<CreativeModeTab> key(String path) {
-        return ResourceKey.create(Registries.CREATIVE_MODE_TAB, ResourceLocation.withDefaultNamespace(path));
+        return ResourceKey.create(Registries.CREATIVE_MODE_TAB, new ResourceLocation(ResourceLocation.DEFAULT_NAMESPACE, path));
     }
 }

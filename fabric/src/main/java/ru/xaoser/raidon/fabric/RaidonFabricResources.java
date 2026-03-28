@@ -20,6 +20,7 @@ public final class RaidonFabricResources {
         RaidClientResources.ensureLayout();
         try {
             RaidClientResources.mirrorTo(RaidClientResources.fabricMirrorRoot());
+            lastSourceFingerprint = RaidClientResources.computeSourceFingerprint(RaidClientResources.sourceRoot());
             Raidon.LOGGER.info("Prepared Fabric config resource pack mirror at {}", RaidClientResources.fabricMirrorRoot());
             enableMirroredPack();
         } catch (IOException exception) {

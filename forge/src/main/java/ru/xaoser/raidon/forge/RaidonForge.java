@@ -58,8 +58,10 @@ public final class RaidonForge {
         Raidon.onServerStopping();
     }
 
-    private void onServerTick(TickEvent.ServerTickEvent.Post event) {
-        RaidManager.onServerTick(event.getServer());
+    private void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            RaidManager.onServerTick(event.getServer());
+        }
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {

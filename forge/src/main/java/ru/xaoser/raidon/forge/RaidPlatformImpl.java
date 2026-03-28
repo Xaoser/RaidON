@@ -1,9 +1,9 @@
 package ru.xaoser.raidon.forge;
 
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.fml.loading.FMLPaths;
 import ru.xaoser.raidon.RaidPlatform;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
 import java.nio.file.Path;
 
@@ -21,7 +21,7 @@ public enum RaidPlatformImpl implements RaidPlatform.Access {
     }
 
     @Override
-    public void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
+    public void sendToPlayer(ServerPlayer player, RaidPacket payload) {
         RaidonForgeNetwork.sendToPlayer(player, payload);
     }
 }

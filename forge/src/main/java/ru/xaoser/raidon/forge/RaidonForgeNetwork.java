@@ -1,49 +1,68 @@
 package ru.xaoser.raidon.forge;
 
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.Channel;
-import net.minecraftforge.network.ChannelBuilder;
+import net.minecraftforge.network.NetworkDirection;
+import net.minecraftforge.network.NetworkEvent;
+import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
+import net.minecraftforge.network.simple.SimpleChannel;
 import ru.xaoser.raidon.Raidon;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 import ru.xaoser.raidon.runtime.network.RaidNetwork;
 import ru.xaoser.raidon.runtime.network.packet.RaidPlaySoundS2CPacket;
 import ru.xaoser.raidon.runtime.network.packet.RaidProgressS2CPacket;
 import ru.xaoser.raidon.runtime.network.packet.RaidStopSoundS2CPacket;
 
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
+
 public final class RaidonForgeNetwork {
-    private static Channel<CustomPacketPayload> channel;
+    private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
+            Objects.requireNonNull(ResourceLocation.tryBuild(Raidon.MODID, "play")),
+            () -> RaidNetwork.PROTOCOL_VERSION,
+            RaidNetwork.PROTOCOL_VERSION::equals,
+            RaidNetwork.PROTOCOL_VERSION::equals
+    );
+    private static boolean initialized;
 
     private RaidonForgeNetwork() {
     }
 
     public static void init() {
-        if (channel != null) {
+        if (initialized) {
             return;
         }
+        initialized = true;
 
-        int protocolVersion = Integer.parseInt(RaidNetwork.PROTOCOL_VERSION);
-        channel = ChannelBuilder.named(ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "play"))
-                .networkProtocolVersion(protocolVersion)
-                .acceptedVersions(Channel.VersionTest.exact(protocolVersion))
-                .payloadChannel()
-                .play()
-                .clientbound()
-                .addMain(RaidProgressS2CPacket.TYPE, RaidProgressS2CPacket.STREAM_CODEC,
-                        (payload, context) -> RaidProgressS2CPacket.handle(payload))
-                .addMain(RaidPlaySoundS2CPacket.TYPE, RaidPlaySoundS2CPacket.STREAM_CODEC,
-                        (payload, context) -> RaidPlaySoundS2CPacket.handle(payload))
-                .addMain(RaidStopSoundS2CPacket.TYPE, RaidStopSoundS2CPacket.STREAM_CODEC,
-                        (payload, context) -> RaidStopSoundS2CPacket.handle(payload))
-                .build();
+        int packetId = 0;
+        register(packetId++, RaidProgressS2CPacket.class, RaidProgressS2CPacket::encode, RaidProgressS2CPacket::decode,
+                RaidProgressS2CPacket::handle);
+        register(packetId++, RaidPlaySoundS2CPacket.class, RaidPlaySoundS2CPacket::encode, RaidPlaySoundS2CPacket::decode,
+                RaidPlaySoundS2CPacket::handle);
+        register(packetId++, RaidStopSoundS2CPacket.class, RaidStopSoundS2CPacket::encode, RaidStopSoundS2CPacket::decode,
+                RaidStopSoundS2CPacket::handle);
     }
 
-    public static void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
+    private static <T extends RaidPacket> void register(int packetId, Class<T> type,
+                                                        BiConsumer<T, FriendlyByteBuf> encoder,
+                                                        Function<FriendlyByteBuf, T> decoder,
+                                                        java.util.function.Consumer<T> handler) {
+        CHANNEL.registerMessage(packetId, type, encoder, decoder, (payload, contextSupplier) -> {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> handler.accept(payload));
+            context.setPacketHandled(true);
+        }, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+    }
+
+    public static void sendToPlayer(ServerPlayer player, RaidPacket payload) {
         if (player == null || payload == null) {
             return;
         }
         init();
-        channel.send(payload, PacketDistributor.PLAYER.with(player));
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), payload);
     }
 }

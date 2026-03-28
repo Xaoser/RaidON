@@ -387,12 +387,12 @@ public final class RaidConfigLoader {
                         if (action.effect() == null) break;
                         ResourceLocation effectId = ResourceLocation.tryParse(action.effect());
                         if (effectId == null) break;
-                        var effectHolder = BuiltInRegistries.MOB_EFFECT.getHolder(effectId).orElse(null);
-                        if (effectHolder == null) break;
+                        MobEffect effect = BuiltInRegistries.MOB_EFFECT.get(effectId);
+                        if (effect == null) break;
                         int duration = Math.max(20, action.duration() == null ? 200 : action.duration());
                         int amplifier = Math.max(0, action.amplifier() == null ? 0 : action.amplifier());
                         for (var player : ctx.playersInRaidZone()) {
-                            player.addEffect(new MobEffectInstance(effectHolder, duration, amplifier));
+                            player.addEffect(new MobEffectInstance(effect, duration, amplifier));
                         }
                     }
                     case "sound", "playsound" -> playSound(ctx, action);
@@ -473,7 +473,7 @@ public final class RaidConfigLoader {
         }
 
         String normalizedPath = RaidClientResources.resolveGeneratedSoundPath(trimmed);
-        return normalizedPath == null ? null : ResourceLocation.fromNamespaceAndPath("raidon_cfg", normalizedPath);
+        return normalizedPath == null ? null : new ResourceLocation("raidon_cfg", normalizedPath);
     }
 
     private static String normalizeConfiguredSoundPath(String raw) {

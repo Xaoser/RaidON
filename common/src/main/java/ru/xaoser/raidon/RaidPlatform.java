@@ -1,7 +1,7 @@
 package ru.xaoser.raidon;
 
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
 import java.nio.file.Path;
 
@@ -32,7 +32,7 @@ public final class RaidPlatform {
         return requireAccess().getGameDir();
     }
 
-    public static void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
+    public static void sendToPlayer(ServerPlayer player, RaidPacket payload) {
         requireAccess().sendToPlayer(player, payload);
     }
 
@@ -48,6 +48,6 @@ public final class RaidPlatform {
 
         Path getGameDir();
 
-        void sendToPlayer(ServerPlayer player, CustomPacketPayload payload);
+        void sendToPlayer(ServerPlayer player, RaidPacket payload);
     }
 }

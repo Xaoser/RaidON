@@ -1,11 +1,9 @@
 package ru.xaoser.raidon.runtime.raid;
 
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.saveddata.SavedData.Factory;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
@@ -14,7 +12,6 @@ import java.util.List;
 
 final class RaidSavedData extends SavedData {
     private static final String DATA_NAME = "raidon_active_raids";
-    private static final Factory<RaidSavedData> FACTORY = new Factory<>(RaidSavedData::new, RaidSavedData::load, null);
 
     private final List<CompoundTag> activeRaidTags = new ArrayList<>();
 
@@ -23,10 +20,10 @@ final class RaidSavedData extends SavedData {
         if (overworld == null) {
             throw new IllegalStateException("RaidSavedData requested before overworld is ready");
         }
-        return overworld.getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
+        return overworld.getDataStorage().computeIfAbsent(RaidSavedData::load, RaidSavedData::new, DATA_NAME);
     }
 
-    static RaidSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
+    static RaidSavedData load(CompoundTag tag) {
         RaidSavedData data = new RaidSavedData();
         ListTag raids = tag.getList("raids", Tag.TAG_COMPOUND);
         for (int i = 0; i < raids.size(); i++) {
@@ -48,7 +45,7 @@ final class RaidSavedData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+    public CompoundTag save(CompoundTag tag) {
         ListTag raids = new ListTag();
         for (CompoundTag activeRaidTag : activeRaidTags) {
             raids.add(activeRaidTag.copy());

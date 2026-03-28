@@ -110,7 +110,7 @@ public final class RaidSummonItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, Item.TooltipContext tooltipContext, List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
+    public void appendHoverText(ItemStack stack, Level level, List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
         definition().ifPresent(definition -> appendTooltip(definition, tooltipComponents));
     }
 
@@ -144,7 +144,7 @@ public final class RaidSummonItem extends Item {
     }
 
     @Override
-    public int getUseDuration(ItemStack stack, LivingEntity entity) {
+    public int getUseDuration(ItemStack stack) {
         return definition().map(RaidSummonItemDefinition::useDurationTicks).orElse(0);
     }
 

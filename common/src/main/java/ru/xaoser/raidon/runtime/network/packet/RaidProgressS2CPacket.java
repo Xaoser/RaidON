@@ -1,16 +1,12 @@
 package ru.xaoser.raidon.runtime.network.packet;
 
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import ru.xaoser.raidon.Raidon;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
-public final class RaidProgressS2CPacket implements CustomPacketPayload {
-    public static final Type<RaidProgressS2CPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "raid_progress"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, RaidProgressS2CPacket> STREAM_CODEC =
-            StreamCodec.ofMember(RaidProgressS2CPacket::encode, RaidProgressS2CPacket::decode);
+public final class RaidProgressS2CPacket implements RaidPacket {
+    public static final ResourceLocation ID = new ResourceLocation(Raidon.MODID, "raid_progress");
 
     private final Progress progress;
 
@@ -19,18 +15,19 @@ public final class RaidProgressS2CPacket implements CustomPacketPayload {
     }
 
     @Override
-    public Type<RaidProgressS2CPacket> type() {
-        return TYPE;
+    public ResourceLocation id() {
+        return ID;
     }
 
-    public void encode(RegistryFriendlyByteBuf buf) {
+    @Override
+    public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(progress != null);
         if (progress != null) {
             progress.encode(buf);
         }
     }
 
-    public static RaidProgressS2CPacket decode(RegistryFriendlyByteBuf buf) {
+    public static RaidProgressS2CPacket decode(FriendlyByteBuf buf) {
         Progress progress = null;
         if (buf.readBoolean()) {
             progress = Progress.decode(buf);
@@ -64,7 +61,7 @@ public final class RaidProgressS2CPacket implements CustomPacketPayload {
             int barWidth,
             int barHeight
     ) {
-        void encode(RegistryFriendlyByteBuf buf) {
+        void encode(FriendlyByteBuf buf) {
             buf.writeResourceLocation(raidId);
             buf.writeUtf(raidName == null ? "" : raidName, 256);
             buf.writeVarInt(waveIndex);
@@ -84,7 +81,7 @@ public final class RaidProgressS2CPacket implements CustomPacketPayload {
             buf.writeVarInt(barHeight);
         }
 
-        static Progress decode(RegistryFriendlyByteBuf buf) {
+        static Progress decode(FriendlyByteBuf buf) {
             ResourceLocation raidId = buf.readResourceLocation();
             String raidName = buf.readUtf(256);
             int waveIndex = buf.readVarInt();

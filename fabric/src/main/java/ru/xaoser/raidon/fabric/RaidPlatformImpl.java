@@ -1,10 +1,9 @@
 package ru.xaoser.raidon.fabric;
 
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import ru.xaoser.raidon.RaidPlatform;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
 import java.nio.file.Path;
 
@@ -22,7 +21,7 @@ public enum RaidPlatformImpl implements RaidPlatform.Access {
     }
 
     @Override
-    public void sendToPlayer(ServerPlayer player, CustomPacketPayload payload) {
-        ServerPlayNetworking.send(player, payload);
+    public void sendToPlayer(ServerPlayer player, RaidPacket payload) {
+        RaidonFabricNetwork.sendToPlayer(player, payload);
     }
 }

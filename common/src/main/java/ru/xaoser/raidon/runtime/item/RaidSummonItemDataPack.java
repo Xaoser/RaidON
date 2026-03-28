@@ -81,7 +81,7 @@ public final class RaidSummonItemDataPack {
                 Path recipePath = root
                         .resolve("data")
                         .resolve(definition.id().getNamespace())
-                        .resolve("recipe")
+                        .resolve("recipes")
                         .resolve(recipe.fileName(definition.id(), index));
                 Files.createDirectories(recipePath.getParent());
                 Files.writeString(recipePath, GSON.toJson(recipe.toJson(definition.id())));

@@ -3,9 +3,7 @@ package ru.xaoser.raidon.runtime.item;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.mojang.serialization.JsonOps;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.Map;
@@ -73,7 +71,7 @@ public record RaidSummonRecipeDefinition(
             keyObject.add(entry.getKey(), entry.getValue().toJson());
         }
         json.add("key", keyObject);
-        json.add("result", resultJson(definitionId));
+        json.add("result", legacyResultObject(definitionId, true));
     }
 
     private void addShapeless(JsonObject json, ResourceLocation definitionId) {
@@ -83,41 +81,37 @@ public record RaidSummonRecipeDefinition(
             ingredientsArray.add(entry.toJson());
         }
         json.add("ingredients", ingredientsArray);
-        json.add("result", resultJson(definitionId));
+        json.add("result", legacyResultObject(definitionId, true));
     }
 
     private void addCooking(JsonObject json, ResourceLocation definitionId) {
         addOptionalCategory(json, "misc");
         json.add("ingredient", ingredient.toJson());
-        json.add("result", resultJson(definitionId));
+        json.addProperty("result", definitionId.toString());
         json.addProperty("experience", experience == null ? 0.0F : Math.max(0.0F, experience));
         json.addProperty("cookingtime", cookingTime == null ? type.defaultCookingTime() : Math.max(1, cookingTime));
     }
 
     private void addStonecutting(JsonObject json, ResourceLocation definitionId) {
         json.add("ingredient", ingredient.toJson());
-        json.add("result", resultJson(definitionId));
+        json.addProperty("result", definitionId.toString());
+        json.addProperty("count", count);
     }
 
     private void addSmithingTransform(JsonObject json, ResourceLocation definitionId) {
         json.add("template", template.toJson());
         json.add("base", base.toJson());
         json.add("addition", addition.toJson());
-        json.add("result", resultJson(definitionId));
+        json.add("result", legacyResultObject(definitionId, false));
     }
 
-    private JsonElement resultJson(ResourceLocation definitionId) {
-        ItemStack resultStack = RaidSummonItemStacks.createStack(
-                RaidSummonItemConfigs.definition(definitionId).orElse(null),
-                count
-        );
-        if (resultStack.isEmpty()) {
-            JsonObject fallback = new JsonObject();
-            fallback.addProperty("id", definitionId.toString());
-            fallback.addProperty("count", count);
-            return fallback;
+    private JsonObject legacyResultObject(ResourceLocation definitionId, boolean includeCount) {
+        JsonObject result = new JsonObject();
+        result.addProperty("item", definitionId.toString());
+        if (includeCount && count > 1) {
+            result.addProperty("count", count);
         }
-        return ItemStack.STRICT_CODEC.encodeStart(JsonOps.INSTANCE, resultStack).getOrThrow();
+        return result;
     }
 
     private void addOptionalCategory(JsonObject json, String fallback) {

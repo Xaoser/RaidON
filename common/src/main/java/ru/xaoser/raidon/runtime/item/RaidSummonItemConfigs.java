@@ -32,7 +32,7 @@ public final class RaidSummonItemConfigs {
             .create();
     private static final String DEFAULT_FILE_NAME = "example_raid_summon.json";
     private static final ResourceLocation DEFAULT_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "item/goat_horn");
+            new ResourceLocation("minecraft", "item/goat_horn");
     private static final String DEFAULT_FILE = """
             {
               "id": "example_raid_horn",
@@ -530,13 +530,13 @@ public final class RaidSummonItemConfigs {
         if (parsed == null) {
             logger.warn("[Raidon] Invalid summon item id '{}' in {}, falling back to {}:{}",
                     raw, file.getFileName(), Raidon.MODID, fallbackPath);
-            return ResourceLocation.fromNamespaceAndPath(Raidon.MODID, fallbackPath);
+            return new ResourceLocation(Raidon.MODID, fallbackPath);
         }
 
         if (!Raidon.MODID.equals(parsed.getNamespace())) {
             logger.warn("[Raidon] Summon item '{}' in {} uses unsupported namespace '{}'; it will be registered as '{}:{}'",
                     parsed, file.getFileName(), parsed.getNamespace(), Raidon.MODID, parsed.getPath());
-            return ResourceLocation.fromNamespaceAndPath(Raidon.MODID, parsed.getPath());
+            return new ResourceLocation(Raidon.MODID, parsed.getPath());
         }
 
         return parsed;
@@ -558,7 +558,7 @@ public final class RaidSummonItemConfigs {
         String trimmed = raw.trim();
         ResourceLocation parsed = trimmed.contains(":")
                 ? ResourceLocation.tryParse(trimmed)
-                : ResourceLocation.fromNamespaceAndPath("raidon_cfg", normalizeTexturePath(trimmed));
+                : new ResourceLocation("raidon_cfg", normalizeTexturePath(trimmed));
 
         if (parsed == null) {
             logger.warn("[Raidon] Invalid summon item texture '{}' in {}, falling back to {}", raw, file.getFileName(), DEFAULT_TEXTURE);

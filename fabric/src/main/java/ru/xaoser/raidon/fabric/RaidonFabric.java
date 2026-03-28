@@ -39,8 +39,8 @@ public final class RaidonFabric implements ModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> RaidManager.onPlayerLogout(handler.player));
 
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
-            if (world instanceof ServerLevel level && entity instanceof Mob mob) {
-                RaidManager.onEntityJoin(level, mob);
+            if (entity instanceof Mob mob) {
+                RaidManager.onEntityJoin(world, mob);
             }
         });
 

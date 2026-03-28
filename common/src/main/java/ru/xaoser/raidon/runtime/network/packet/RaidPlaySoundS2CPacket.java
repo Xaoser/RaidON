@@ -1,17 +1,13 @@
 package ru.xaoser.raidon.runtime.network.packet;
 
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import ru.xaoser.raidon.Raidon;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
-public final class RaidPlaySoundS2CPacket implements CustomPacketPayload {
-    public static final Type<RaidPlaySoundS2CPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "raid_play_sound"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, RaidPlaySoundS2CPacket> STREAM_CODEC =
-            StreamCodec.ofMember(RaidPlaySoundS2CPacket::encode, RaidPlaySoundS2CPacket::decode);
+public final class RaidPlaySoundS2CPacket implements RaidPacket {
+    public static final ResourceLocation ID = new ResourceLocation(Raidon.MODID, "raid_play_sound");
 
     private final ResourceLocation soundId;
     private final SoundSource source;
@@ -41,11 +37,12 @@ public final class RaidPlaySoundS2CPacket implements CustomPacketPayload {
     }
 
     @Override
-    public Type<RaidPlaySoundS2CPacket> type() {
-        return TYPE;
+    public ResourceLocation id() {
+        return ID;
     }
 
-    public void encode(RegistryFriendlyByteBuf buf) {
+    @Override
+    public void encode(FriendlyByteBuf buf) {
         buf.writeResourceLocation(soundId);
         buf.writeEnum(source);
         buf.writeFloat(volume);
@@ -59,7 +56,7 @@ public final class RaidPlaySoundS2CPacket implements CustomPacketPayload {
         }
     }
 
-    public static RaidPlaySoundS2CPacket decode(RegistryFriendlyByteBuf buf) {
+    public static RaidPlaySoundS2CPacket decode(FriendlyByteBuf buf) {
         ResourceLocation soundId = buf.readResourceLocation();
         SoundSource source = buf.readEnum(SoundSource.class);
         float volume = buf.readFloat();

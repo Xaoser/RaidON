@@ -17,7 +17,7 @@ public enum RaidSummonRecipeType {
     private final ResourceLocation serializerId;
 
     RaidSummonRecipeType(String serializerId) {
-        this.serializerId = ResourceLocation.parse(serializerId);
+        this.serializerId = new ResourceLocation(serializerId);
     }
 
     public ResourceLocation serializerId() {

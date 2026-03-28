@@ -160,10 +160,7 @@ subprojects {
 
     dependencies {
         minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
-        mappings loom.layered() {
-            officialMojangMappings()
-            parchment("org.parchmentmc.data:parchment-${rootProject.minecraft_version}:${rootProject.parchment_version}@zip")
-        }
+        mappings loom.officialMojangMappings()
     }
 }
 
@@ -229,13 +226,13 @@ allprojects {
     buildscript.repositories.whenObjectAdded(rewriteRepository)
 
     java {
-        toolchain.languageVersion = JavaLanguageVersion.of(21)
+        toolchain.languageVersion = JavaLanguageVersion.of(17)
         withSourcesJar()
     }
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
-        options.release = 21
+        options.release = 17
     }
 
     publishing {

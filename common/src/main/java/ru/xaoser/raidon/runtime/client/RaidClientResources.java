@@ -10,8 +10,6 @@ import com.google.gson.JsonSyntaxException;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.packs.PackLocationInfo;
-import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.repository.Pack;
@@ -32,9 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 public final class RaidClientResources {
@@ -46,24 +42,21 @@ public final class RaidClientResources {
             .disableHtmlEscaping()
             .setPrettyPrinting()
             .create();
+    private static boolean legacyItemModelRootPruned;
 
     private RaidClientResources() {
     }
 
     public static Pack createConfigPack() {
         ensureLayout();
-        PackLocationInfo location = new PackLocationInfo(
+        return Pack.readMetaAndCreate(
                 PACK_ID,
                 Component.literal(PACK_TITLE),
-                PackSource.create(UnaryOperator.identity(), true),
-                Optional.empty()
-        );
-        Pack.ResourcesSupplier supplier = new PathPackResources.PathResourcesSupplier(root());
-        return Pack.readMetaAndCreate(
-                location,
-                supplier,
+                true,
+                packId -> new PathPackResources(packId, root(), true),
                 PackType.CLIENT_RESOURCES,
-                new PackSelectionConfig(true, Pack.Position.TOP, false)
+                Pack.Position.TOP,
+                PackSource.DEFAULT
         );
     }
 
@@ -382,7 +375,10 @@ public final class RaidClientResources {
                 .resolve(Raidon.MODID)
                 .resolve("models")
                 .resolve("item");
-        deleteDirectory(legacyItemModelRoot);
+        if (!legacyItemModelRootPruned && Files.exists(legacyItemModelRoot)) {
+            deleteDirectory(legacyItemModelRoot);
+            legacyItemModelRootPruned = true;
+        }
         Files.createDirectories(legacyItemModelRoot);
 
         for (RaidSummonItemDefinition definition : RaidSummonItemConfigs.registeredDefinitions()) {

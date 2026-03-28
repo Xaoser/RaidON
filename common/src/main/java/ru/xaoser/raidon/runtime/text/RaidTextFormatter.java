@@ -70,7 +70,7 @@ public final class RaidTextFormatter {
             return null;
         }
         try {
-            return Component.Serializer.fromJson(trimmed, registries);
+            return Component.Serializer.fromJson(trimmed);
         } catch (Exception ignored) {
             return null;
         }

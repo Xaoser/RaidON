@@ -14,8 +14,8 @@ public final class RaidonFabricClient implements ClientModInitializer {
         RaidonFabricNetwork.initClient();
         RaidonFabricResources.prepare();
 
-        HudRenderCallback.EVENT.register((guiGraphics, deltaTracker) ->
-                RaidHudOverlay.INSTANCE.render(guiGraphics, deltaTracker));
+        HudRenderCallback.EVENT.register((guiGraphics, tickDelta) ->
+                RaidHudOverlay.INSTANCE.render(guiGraphics));
         ClientTickEvents.END_CLIENT_TICK.register(client -> RaidonFabricResources.onClientTick());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> RaidonClient.onDisconnect());
     }

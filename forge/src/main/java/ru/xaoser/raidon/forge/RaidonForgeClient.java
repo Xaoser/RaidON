@@ -1,9 +1,9 @@
 package ru.xaoser.raidon.forge;
 
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.client.gui.overlay.ForgeLayeredDraw;
+import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraftforge.event.TickEvent;
@@ -40,20 +40,20 @@ final class RaidonForgeClient {
         }
     }
 
-    private static void onRegisterOverlays(AddGuiOverlayLayersEvent event) {
-        event.getLayeredDraw().addAbove(
-                ForgeLayeredDraw.PRE_SLEEP_STACK,
-                ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "raidon_progress"),
-                ForgeLayeredDraw.HOTBAR,
-                RaidHudOverlay.INSTANCE
-        );
+    private static void onRegisterOverlays(RegisterGuiOverlaysEvent event) {
+        IGuiOverlay overlay = (gui, guiGraphics, partialTick, screenWidth, screenHeight) ->
+                RaidHudOverlay.INSTANCE.render(guiGraphics);
+        event.registerAboveAll("raidon_progress", overlay);
     }
 
     private static void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         RaidonClient.onDisconnect();
     }
 
-    private static void onClientTick(TickEvent.ClientTickEvent.Post event) {
+    private static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
         if ((tickCounter++ % 20L) != 0L) {
             return;
         }

@@ -1,10 +1,8 @@
 package ru.xaoser.raidon.runtime.client;
 
-import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.LayeredDraw;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.GameType;
@@ -12,7 +10,7 @@ import ru.xaoser.raidon.runtime.text.RaidTextFormatter;
 
 import java.util.Locale;
 
-public enum RaidHudOverlay implements LayeredDraw.Layer {
+public enum RaidHudOverlay {
     INSTANCE;
 
     private static final int DEFAULT_PANEL_WIDTH = 156;
@@ -21,8 +19,7 @@ public enum RaidHudOverlay implements LayeredDraw.Layer {
     private static final int PANEL_MARGIN = 6;
     private static final int PANEL_BOTTOM = 10;
 
-    @Override
-    public void render(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
+    public void render(GuiGraphics guiGraphics) {
         if (!RaidHudState.shouldRender()) return;
 
         Minecraft mc = Minecraft.getInstance();

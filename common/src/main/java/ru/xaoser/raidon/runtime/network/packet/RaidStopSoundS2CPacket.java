@@ -1,16 +1,12 @@
 package ru.xaoser.raidon.runtime.network.packet;
 
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import ru.xaoser.raidon.Raidon;
+import ru.xaoser.raidon.runtime.network.RaidPacket;
 
-public final class RaidStopSoundS2CPacket implements CustomPacketPayload {
-    public static final Type<RaidStopSoundS2CPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Raidon.MODID, "raid_stop_sound"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, RaidStopSoundS2CPacket> STREAM_CODEC =
-            StreamCodec.ofMember(RaidStopSoundS2CPacket::encode, RaidStopSoundS2CPacket::decode);
+public final class RaidStopSoundS2CPacket implements RaidPacket {
+    public static final ResourceLocation ID = new ResourceLocation(Raidon.MODID, "raid_stop_sound");
 
     private final double zoneX;
     private final double zoneY;
@@ -25,18 +21,19 @@ public final class RaidStopSoundS2CPacket implements CustomPacketPayload {
     }
 
     @Override
-    public Type<RaidStopSoundS2CPacket> type() {
-        return TYPE;
+    public ResourceLocation id() {
+        return ID;
     }
 
-    public void encode(RegistryFriendlyByteBuf buf) {
+    @Override
+    public void encode(FriendlyByteBuf buf) {
         buf.writeDouble(zoneX);
         buf.writeDouble(zoneY);
         buf.writeDouble(zoneZ);
         buf.writeFloat(zoneRadius);
     }
 
-    public static RaidStopSoundS2CPacket decode(RegistryFriendlyByteBuf buf) {
+    public static RaidStopSoundS2CPacket decode(FriendlyByteBuf buf) {
         return new RaidStopSoundS2CPacket(
                 buf.readDouble(),
                 buf.readDouble(),

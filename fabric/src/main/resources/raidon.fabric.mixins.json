@@ -1,7 +1,7 @@
 {
   "required": true,
   "package": "ru.xaoser.raidon.fabric.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_17",
   "mixins": [
     "MobConversionGuardMixin",
     "MobGoalSelectorsAccessorMixin",
